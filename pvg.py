@@ -4,27 +4,25 @@ import requests
 import time
 import shutil
 import sys
-import getpass
 from pixivpy3 import *
 from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.contrib.completers import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
-conf = None
 
 # no / at the end; make sure they exist
 PIX_PATH = './pixs'
 REMOVED_PATH = './pixs/removed'
 REQ_PATH = './req'
 CONF_PATH = 'conf.json'
-
 image_sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
 api = AppPixivAPI()
 fav = []
-_fav = []
 uid = 0
+conf = None
+
 def to_filename(url):
     return url[url.rfind('/') + 1:]
 
@@ -216,7 +214,7 @@ def shell():
         '$$w' : ~wf_w
     }
     history = InMemoryHistory()
-    completer = WordCompleter(list(subs.keys()) + ['select', 'select_any'], ignore_case=True)
+    completer = WordCompleter(list(subs.keys()) + list(wfs.keys()) + ['select', 'select_any'], ignore_case=True)
 
     shell_check()
     while True:
