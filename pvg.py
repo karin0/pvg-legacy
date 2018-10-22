@@ -199,16 +199,16 @@ def shell_system(cmd):
 
 def shell():
     subs = {
-            'fetch': download_all, 
-            'update': update,
-            'clean': clean,
-            'check': shell_check,
-            'exit': lambda: sys.exit(0),
-            'unselect': unselect,
-            'count': count,
-            'open': lambda: shell_system_nohup('xdg-open .'),
-            'gopen': lambda: shell_system_nohup(f'gthumb {REQ_PATH}')
-            }
+        'fetch': download_all, 
+        'update': update,
+        'clean': clean,
+        'check': shell_check,
+        'exit': lambda: sys.exit(0),
+        'unselect': unselect,
+        'count': count,
+        'open': lambda: shell_system_nohup('xdg-open .'),
+        'gopen': lambda: shell_system_nohup(f'gthumb {REQ_PATH}')
+        }
     wfs = {
         '$h': wf_h,
         '$$h': ~wf_h,
