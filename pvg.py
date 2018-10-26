@@ -10,27 +10,36 @@ from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.contrib.completers import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
-
-# no / at the end; make sure they exist
-PIX_PATH = './pixs'
-REMOVED_PATH = './pixs/removed'
-REQ_PATH = './req'
 CONF_PATH = 'conf.json'
-image_sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
-api = AppPixivAPI()
-fav = []
-uid = 0
+conf_pix_path = None
+conf_unused_path = None
+conf_req_path = None
+conf_username = None
+conf_passwd = None
 conf = None
+fav = []
+pix_files = set()
+api = AppPixivAPI()
+uid = 0
 
 def to_filename(url):
     return url[url.rfind('/') + 1:]
+
+def to_ext(fn):
+    return fn[fn.rfind('.') + 1:]
 
 def ckall(func, lst):
     return all((func(x) for x in lst))
 
 def ckany(func, lst):
     return any((func(x) for x in lst))
+
+def try_move(src, dest):
+    try:
+        shutil.move(src, dest)
+    except FileNotFoundError:
+        pass
 
 class Work(object):
     def __init__(self, data):
@@ -69,14 +78,14 @@ class WorkFilter(object):
         return WorkFilter(lambda pix: not self.func(pix))
 
 def check_google():
-    if os.system('curl google.com -m 5 >/dev/null 2>/dev/null'):
+    if os.system('curl google.com -m 5'):
         raise RuntimeError('Bad network connection, exiting..')
 
 def login():
     check_google()
     global uid
     if not uid:
-        ret = api.login(conf['username'], conf['passwd'])
+        ret = api.login(conf_username, conf_passwd)
         uid = int(ret['response']['user']['id'])
         print("Logined, uid =", uid)
 
@@ -118,24 +127,28 @@ def count(filt):
 # file operation
 
 def unselect():
-    os.system('mv %s/* %s/' % (REQ_PATH, PIX_PATH))
-    print("Unselected.")
+    cnt = 0
+    for fn in os.listdir(conf_req_path):
+        if fn.lower() in pix_files:
+            cnt += 1
+            shutil.move(f'{conf_req_path}/{fn}', conf_pix_path)
+    print(f'Unselected {cnt} files.')
 
 def select(filt):
     pixs = find(filt)
     unselect()
     for pix in pixs:
         # assert(pix.is_downloaded())
-        for name in pix.filenames:
-            shutil.move('%s/%s' % (PIX_PATH, name), REQ_PATH)
-    print("Selected %d pixs." % len(pixs))
+        for fn in pix.filenames:
+            shutil.move(f'{conf_pix_path}/{fn}', conf_req_path)
+    print(f'Selected {len(pixs)} pixs.')
     return pixs
 
 def download_all():
     check_google()
     unselect()
     print('Counting undownloaded files..')
-    ls = set(os.listdir(PIX_PATH))
+    ls = set(os.listdir(conf_pix_path))
     nfav = [x for pix in fav for x in pix.urls if to_filename(x) not in ls]
     if not nfav:
         print('All pixs are downloaded.')
@@ -150,27 +163,34 @@ def download_all():
     with open('todo.txt', 'w', encoding='utf-8') as fp:
         for x in lst:
             fp.write(x + '\n')
-    os.system('wget -nv --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36" --header="Referer: http://www.pixiv.net" -i todo.txt -P %s/' % PIX_PATH)
+    os.system('wget -nv --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36" --header="Referer: http://www.pixiv.net" -i todo.txt -P %s/' % conf_pix_path)
     clean()
     print('Done.')
 
+def gen_pix_files():
+    pix_files.clear()
+    for pix in fav:
+        for x in pix.filenames:
+            pix_files.add(x.lower())
+
 def clean():
-    print('Cleaning removed pixs..')
+    sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
+    print('Cleaning unavailable files..')
     unselect()
-    ids = {x.id for x in fav}
     cnt = 0
-    for x in os.listdir(PIX_PATH):
-        name = x.lower()
-        if name[name.rfind('.') + 1:] in image_sufs and int(name[:name.find('_')]) not in ids:
-            os.system(f'mv "{PIX_PATH}/{x}" {REMOVED_PATH}/')
+    for fn in os.listdir(conf_pix_path):
+        fnl = fn.lower()
+        if fnl not in pix_files and to_ext(fnl) in sufs:
+            shutil.move(f'{conf_pix_path}/{fn}', conf_unused_path)
             cnt += 1
     print('Cleaned %d files.' % cnt)
 
 def update():
-    os.system('mv fav.json fav_bak.json')
     fetch_fav()
+    try_move('fav.json', 'fav_bak.json')
     with open('fav.json', 'w', encoding='utf-8') as f:
         json.dump([pix.original_data for pix in fav], f)
+    gen_pix_files()
     download_all()
 
 # interface
@@ -183,11 +203,18 @@ def wf_hat(tag):
     return WorkFilter(lambda pix: tag in pix.spec)
 
 wf_true = WorkFilter(lambda pix: True)
+wf_false = WorkFilter(lambda pix: False)
 wf_w = WorkFilter(lambda pix: pix.width >= pix.height)
 wf_h = wf_hayt('R-18', 'R-17', 'R-16', 'R-15')
+wfs = {
+    '$h': wf_h,
+    '$$h': ~wf_h,
+    '$w': wf_w,
+    '$$w' : ~wf_w
+}
 
 def shell_check():
-    print(f"{conf['username']} UID: {uid}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files")
+    print(f"{conf_username} UID: {uid}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files")
 
 def shell_system_nohup(cmd):
     os.system(f'nohup {cmd} &')
@@ -195,6 +222,17 @@ def shell_system_nohup(cmd):
 def shell_system(cmd):
     os.system(cmd)
 
+def parse_filter(seq, any_mode=False):
+    if not seq: raise ValueError('No arguments.')
+    opt = (lambda x, y: x | y) if any_mode else (lambda x, y: x & y)
+    filt = wf_false if any_mode else wf_true
+    for cond in seq:
+        if cond.startswith('$'):
+            if cond in wfs: filt = opt(filt, wfs[cond])
+            elif cond[1] == '$': filt = opt(filt, ~wf_hat(cond[2:]))
+            else: raise ValueError(f'Invalid syntax: {cond}')
+        else: filt = opt(filt, wf_hat(cond))
+    return filt
 def shell():
     subs = {
         'fetch': download_all, 
@@ -203,18 +241,12 @@ def shell():
         'check': shell_check,
         'exit': lambda: sys.exit(0),
         'unselect': unselect,
-        'count': count,
         'open': lambda: shell_system_nohup('xdg-open .'),
-        'gopen': lambda: shell_system_nohup(f'gthumb {REQ_PATH}')
+        'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
         }
-    wfs = {
-        '$h': wf_h,
-        '$$h': ~wf_h,
-        '$w': wf_w,
-        '$$w' : ~wf_w
-    }
     history = InMemoryHistory()
-    completer = WordCompleter(list(subs.keys()) + list(wfs.keys()) + ['select', 'select_any'], ignore_case=True)
+    comp_list = list(subs.keys()) + list(wfs.keys()) + list(get_all_tags().keys()) + ['select', 'select_any']
+    completer = WordCompleter(comp_list, ignore_case=True)
 
     shell_check()
     while True:
@@ -225,16 +257,9 @@ def shell():
             cmd = args[0]
             if cmd in subs: subs[cmd]()
             elif cmd.startswith('select') or cmd[0] == '?':
-                if len(args) == 1: raise ValueError('Too few arguments.')
-                opt = (lambda x, y: x | y) if cmd.endswith('any') else (lambda x, y: x & y)
-                filt = wf_true
-                for cond in args[1:]:
-                    if cond.startswith('$'):
-                        if cond in wfs: filt = opt(filt, wfs[cond])
-                        elif cond[1] == '$': filt = opt(filt, ~wf_hat(cond[2:]))
-                        else: raise ValueError(f'Invalid tag syntax: {cond}')
-                    else: filt = opt(filt, wf_hat(cond))
-                select(filt)
+                select(parse_filter(args[1:]))
+            elif cmd == 'count':
+                count(parse_filter(args[1:]))
             elif line[0] == '!':
                 if line[1] == '!': shell_system_nohup(line[2:])
                 else: shell_system(line[1:])
@@ -243,6 +268,8 @@ def shell():
         except EOFError:
             sys.exit(0)
         except ValueError as e:
+            print(e)
+        except NotImplementedError as e:
             print(e)
 
 def get_all_tags():
@@ -261,12 +288,21 @@ def fooh(*tgs):
 def foon(*tgs):
     return select(wf_halt(*tgs) & ~wf_h)
 
-if __name__ == '__main__':
-    assert(all((os.path.exists(x) for x in [PIX_PATH, REMOVED_PATH, REQ_PATH, CONF_PATH])))
-    with open(CONF_PATH, encoding='utf-8') as fp:
-        conf = json.load(fp, encoding='utf-8')
-    with open('fav.json', 'r', encoding='utf-8') as f:
-        _fav = json.load(f, encoding='utf-8')
-    fav = [Work(data) for data in _fav]
+with open(CONF_PATH, encoding='utf-8') as fp:
+    conf = json.load(fp, encoding='utf-8')
+    conf_username = conf['username']
+    conf_passwd = conf['passwd']
+    conf_pix_path = conf['pix_path']
+    conf_unused_path = conf['unused_path']
+    conf_req_path = conf['req_path']
+    assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, CONF_PATH])))
 
+try:
+    with open('fav.json', 'r', encoding='utf-8') as fp:
+        fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
+    gen_pix_files()
+except Exception as e:
+    print('Failed to load from local fav:', e)
+
+if __name__ == '__main__':
     shell()
