@@ -1,4 +1,7 @@
 {
     "username": "dredgar",
-    "passwd": "your_password"
+    "passwd": "your_password",
+    "pix_path": "./pix",
+    "unused_path": "./unused",
+    "req_path":  "./req"
 }
