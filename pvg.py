@@ -197,8 +197,10 @@ def update():
 
 def wf_halt(*tgs):
     return WorkFilter(lambda pix: ckall(lambda x: x in pix.spec, tgs))
+
 def wf_hayt(*tgs):
     return WorkFilter(lambda pix: ckany(lambda x: x in pix.spec, tgs))
+
 def wf_hat(tag):
     return WorkFilter(lambda pix: tag in pix.spec)
 
@@ -233,6 +235,7 @@ def parse_filter(seq, any_mode=False):
             else: raise ValueError(f'Invalid syntax: {cond}')
         else: filt = opt(filt, wf_hat(cond))
     return filt
+
 def shell():
     subs = {
         'fetch': download_all, 
@@ -269,8 +272,6 @@ def shell():
             sys.exit(0)
         except ValueError as e:
             print(e)
-        except NotImplementedError as e:
-            print(e)
 
 def get_all_tags():
     tags = dict()
@@ -279,23 +280,18 @@ def get_all_tags():
             if tag in tags: tags[tag] += 1
             else: tags[tag] = 1
     return tags
-def foo(*tgs):
-    return select(wf_halt(*tgs))
-def foow(*tgs):
-    return select(wf_halt(*tgs) & wf_w)
-def fooh(*tgs):
-    return select(wf_halt(*tgs) & wf_h)
-def foon(*tgs):
-    return select(wf_halt(*tgs) & ~wf_h)
+
+# init
 
 with open(CONF_PATH, encoding='utf-8') as fp:
     conf = json.load(fp, encoding='utf-8')
-    conf_username = conf['username']
-    conf_passwd = conf['passwd']
-    conf_pix_path = conf['pix_path']
-    conf_unused_path = conf['unused_path']
-    conf_req_path = conf['req_path']
-    assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, CONF_PATH])))
+
+conf_username = conf['username']
+conf_passwd = conf['passwd']
+conf_pix_path = conf['pix_path']
+conf_unused_path = conf['unused_path']
+conf_req_path = conf['req_path']
+assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, CONF_PATH])))
 
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
