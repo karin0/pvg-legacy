@@ -1,10 +1,12 @@
-import json
+# coding: utf-8
 import os
-import requests
+import json
 import time
 import shutil
 import sys
-from pixivpy3 import *
+import subprocess
+import requests
+from pixivpy3 import AppPixivAPI
 from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.contrib.completers import WordCompleter
@@ -18,11 +20,11 @@ conf_req_path = None
 conf_username = None
 conf_passwd = None
 conf = None
+net_accessable = False
 fav = []
 pix_files = set()
 api = AppPixivAPI()
 uid = 0
-
 def to_filename(url):
     return url[url.rfind('/') + 1:]
 
@@ -35,25 +37,30 @@ def ckall(func, lst):
 def ckany(func, lst):
     return any((func(x) for x in lst))
 
-def try_move(src, dest):
-    try:
-        shutil.move(src, dest)
-    except FileNotFoundError:
-        pass
+def check_cmd(cmd):
+    subprocess.check_call(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # assuming no spaces in args
+
+class MaxTryLimitExceed(Exception):
+    pass
+
+def keep_trying(max_depth=5, catchee=BaseException):
+    def decorater(func):
+        def wrapper_2(args, kwargs, depth):
+            if depth >= max_depth: raise MaxTryLimitExceed
+            try:
+                return func(*args, **kwargs)
+            except catchee as e:
+                print(f'Failed in depth {depth}: {e}')
+                return wrapper_2(args, kwargs, depth + 1)
+        def wrapper(*args, **kwargs):
+            return wrapper_2(args, kwargs, depth=0)
+        return wrapper
+    return decorater
 
 class Work(object):
     def __init__(self, data):
-        self.original_data = data
-        self.id = data['id']
-        self.title = data['title']
-        self.caption = data['caption']
-        self.width = data['width']
-        self.height = data['height']
-        self.page_count = data['page_count']
-        self.type = data['type']
+        self.data = data
         self.user_name = data['user']['name']
-        self.total_view = data['total_view']
-        self.total_bookmarks = data['total_bookmarks']
         self.tags = [x['name'] for x in data['tags']]
         self.spec = '$!$'.join(self.tags + [self.title])
         self.urls = [data['meta_single_page']['original_image_url']] if data['meta_single_page'] \
@@ -64,6 +71,8 @@ class Work(object):
         return repr(self.intro)
     def __str__(self):
         return str(self.intro)
+    def __getattr__(self, item):
+        return self.data[item]
         
 class WorkFilter(object):
     def __init__(self, func):
@@ -77,29 +86,22 @@ class WorkFilter(object):
     def __invert__(self):
         return WorkFilter(lambda pix: not self.func(pix))
 
-def check_google():
-    if os.system('curl google.com -m 5'):
-        raise RuntimeError('Bad network connection, exiting..')
-
 def login():
-    check_google()
     global uid
     if not uid:
         ret = api.login(conf_username, conf_passwd)
         uid = int(ret['response']['user']['id'])
         print("Logined, uid =", uid)
 
-def api_handler(**args):
-    try:
-        return api.user_bookmarks_illust(**args)
-    except BaseException:
-        return api_handler(**args)
-
 # database operation
 
 def fetch_fav():
     global fav
     def foo(rest):
+        @keep_trying()
+        def api_handler(**args):
+            return api.user_bookmarks_illust(**args)
+
         cnt = 0
         nqs = dict()
         res = []
@@ -107,13 +109,13 @@ def fetch_fav():
             r =      api_handler(**nqs)              if cnt  \
                 else api_handler(user_id=uid, restrict=rest)
             cnt += 1
-            print('Page #%d: %d found (%s)' % (cnt, len(r.illusts), rest))
+            print(f'{len(r.illusts)} on {rest} page #{cnt}')
             res += list(map(dict, r.illusts))
             if r.next_url is None:
                 break
             nqs = api.parse_qs(r.next_url)
         vres = [Work(data) for data in res if data['user']['id'] > 0]
-        print('Total %d; Invalid %d; Over (%s)' % (len(vres), len(res) - len(vres), rest))
+        print(f'{len(vres)} {rest} in total, {len(res) - len(vres)} invalid')
         return vres
     login()
     fav = foo('public') + foo('private')
@@ -144,29 +146,6 @@ def select(filt):
     print(f'Selected {len(pixs)} pixs.')
     return pixs
 
-def download_all():
-    check_google()
-    unselect()
-    print('Counting undownloaded files..')
-    ls = set(os.listdir(conf_pix_path))
-    nfav = [x for pix in fav for x in pix.urls if to_filename(x) not in ls]
-    if not nfav:
-        print('All pixs are downloaded.')
-        return
-    siz = len(nfav)
-    print('%d new files' % siz)
-    lst = []
-    for x in nfav:
-        print(x)
-        lst.append(x)
-    lst.sort(key=lambda x: to_filename(x))
-    with open('todo.txt', 'w', encoding='utf-8') as fp:
-        for x in lst:
-            fp.write(x + '\n')
-    os.system('wget -nv --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36" --header="Referer: http://www.pixiv.net" -i todo.txt -P %s/' % conf_pix_path)
-    clean()
-    print('Done.')
-
 def gen_pix_files():
     pix_files.clear()
     for pix in fav:
@@ -185,11 +164,50 @@ def clean():
             cnt += 1
     print('Cleaned %d files.' % cnt)
 
+class OperationFailedError(Exception):
+    pass
+
+def download_all():
+    @keep_trying()
+    def run_wget(url):
+        subprocess.run('wget -nv --timeout=5'
+        + ' --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36"'
+        + f' --header="Referer: https://www.pixiv.net" -O {conf_pix_path}/{to_filename(url)} {url}',
+        check=True, shell=True)
+
+    unselect()
+    if not net_accessable:
+        raise OperationFailedError('Internet unaccessable.')
+    print('Counting undownloaded files..')
+    ls_pix = set(os.listdir(conf_pix_path))
+    ls_unused = set(os.listdir(conf_unused_path))
+    def filt(url):
+        fn = to_filename(url)
+        if fn not in ls_pix:
+            if fn in ls_unused: shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
+            else: return True
+        return False
+    que = [url for pix in fav for url in pix.urls if filt(url)]
+    if not que:
+        print('All pixs are downloaded.')
+        return
+    print(f'{len(que)} new files')
+    cnt = 0
+    for url in que:
+        cnt += 1
+        print(f'{cnt}/{len(que)}')
+        run_wget(url)
+    clean()
+    print('Done.')
+
 def update():
+    if not net_accessable:
+        raise OperationFailedError('Internet unaccessable.')
     fetch_fav()
-    try_move('fav.json', 'fav_bak.json')
+    if os.path.exists('fav.json'):
+        shutil.move('fav.json', 'fav_bak.json')
     with open('fav.json', 'w', encoding='utf-8') as f:
-        json.dump([pix.original_data for pix in fav], f)
+        json.dump([pix.data for pix in fav], f)
     gen_pix_files()
     download_all()
 
@@ -219,20 +237,20 @@ def shell_check():
     print(f"{conf_username} UID: {uid}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files")
 
 def shell_system_nohup(cmd):
-    os.system(f'nohup {cmd} &')
+    subprocess.run(f'nohup {cmd} &', shell=True)
 
 def shell_system(cmd):
-    os.system(cmd)
+    subprocess.run(cmd, shell=True)
 
 def parse_filter(seq, any_mode=False):
-    if not seq: raise ValueError('No arguments.')
+    if not seq: raise OperationFailedError('No arguments.')
     opt = (lambda x, y: x | y) if any_mode else (lambda x, y: x & y)
     filt = wf_false if any_mode else wf_true
     for cond in seq:
         if cond.startswith('$'):
             if cond in wfs: filt = opt(filt, wfs[cond])
             elif cond[1] == '$': filt = opt(filt, ~wf_hat(cond[2:]))
-            else: raise ValueError(f'Invalid syntax: {cond}')
+            else: raise OperationFailedError(f'Invalid syntax: {cond}')
         else: filt = opt(filt, wf_hat(cond))
     return filt
 
@@ -267,10 +285,10 @@ def shell():
                 if line[1] == '!': shell_system_nohup(line[2:])
                 else: shell_system(line[1:])
             elif line[0] == '$': exec(line[1:])
-            else: raise ValueError('Unknown command.')
+            else: raise OperationFailedError('Unknown command.')
         except EOFError:
             sys.exit(0)
-        except ValueError as e:
+        except OperationFailedError as e:
             print(e)
 
 def get_all_tags():
@@ -286,6 +304,14 @@ def get_all_tags():
 with open(CONF_PATH, encoding='utf-8') as fp:
     conf = json.load(fp, encoding='utf-8')
 
+check_cmd('curl -V')
+check_cmd('wget -V')
+try:
+    check_cmd('curl https://www.pixiv.net -m 5')
+    net_accessable = True
+except Exception:
+    print('Warning: Internet unaccessable.')
+
 conf_username = conf['username']
 conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
@@ -298,7 +324,7 @@ try:
         fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
     gen_pix_files()
 except Exception as e:
-    print('Failed to load from local fav:', e)
+    print('Warning: Cannot load from local fav:', e)
 
 if __name__ == '__main__':
     shell()
