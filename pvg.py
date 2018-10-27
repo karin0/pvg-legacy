@@ -1,4 +1,3 @@
-# coding: utf-8
 import os
 import json
 import time
@@ -198,7 +197,7 @@ def download_all():
         print(f'{cnt}/{len(que)}')
         run_wget(url)
     clean()
-    print('Done.')
+    print('Downloaded all.')
 
 def update():
     if not net_accessable:
@@ -260,11 +259,11 @@ def shell():
         'update': update,
         'clean': clean,
         'check': shell_check,
-        'exit': lambda: sys.exit(0),
+        'exit': lambda: sys.exit(),
         'unselect': unselect,
         'open': lambda: shell_system_nohup('xdg-open .'),
         'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
-        }
+    }
     history = InMemoryHistory()
     comp_list = list(subs.keys()) + list(wfs.keys()) + list(get_all_tags().keys()) + ['select', 'select_any']
     completer = WordCompleter(comp_list, ignore_case=True)
@@ -287,9 +286,9 @@ def shell():
             elif line[0] == '$': exec(line[1:])
             else: raise OperationFailedError('Unknown command.')
         except EOFError:
-            sys.exit(0)
-        except OperationFailedError as e:
-            print(e)
+            sys.exit()
+        except Exception as e:
+            print(f'{type(e).__name__}: {e}')
 
 def get_all_tags():
     tags = dict()
