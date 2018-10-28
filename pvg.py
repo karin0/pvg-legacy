@@ -56,7 +56,7 @@ def keep_trying(max_depth=5, catchee=BaseException):
             try:
                 return func(*args, **kwargs)
             except catchee as e:
-                print(f'Failed in depth {depth}: {type(e).__name__}: {e}')
+                print(f'In depth {depth}: {type(e).__name__}: {e}')
                 return wrapper(args, kwargs, depth + 1)
         def handler(*args, **kwargs):
             return wrapper(args, kwargs, 0)
