@@ -51,16 +51,16 @@ class MaxTryLimitExceed(Exception):
 
 def keep_trying(max_depth=5, catchee=BaseException):
     def decorater(func):
-        def wrapper_2(args, kwargs, depth):
+        def wrapper(args, kwargs, depth):
             if depth >= max_depth: raise MaxTryLimitExceed
             try:
                 return func(*args, **kwargs)
             except catchee as e:
                 print(f'Failed in depth {depth}: {type(e).__name__}: {e}')
-                return wrapper_2(args, kwargs, depth + 1)
-        def wrapper(*args, **kwargs):
-            return wrapper_2(args, kwargs, depth=0)
-        return wrapper
+                return wrapper(args, kwargs, depth + 1)
+        def handler(*args, **kwargs):
+            return wrapper(args, kwargs, 0)
+        return handler
     return decorater
 
 class Work(object):
@@ -205,12 +205,12 @@ def fetch():
     if cnt:
         print(f'Recovered {cnt} files from unused dir.')
     if not que:
-        print('All pixs are downloaded.')
+        print('All files are downloaded.')
         return
 
     if not net_accessable:
         raise OperationFailedError('Internet unaccessable.')
-    print(f'{len(que)} new files')
+    print(f'{len(que)} files to download.')
     cnt = 0
     for url in que:
         cnt += 1
