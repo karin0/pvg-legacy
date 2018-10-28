@@ -1,7 +1,8 @@
 {
     "username": "dredgar",
-    "passwd": "your_password",
+    "passwd": "12345678",
     "pix_path": "./pix",
     "unused_path": "./unused",
-    "req_path":  "./req"
+    "req_path":  "./req",
+	"max_page_count": -1
 }

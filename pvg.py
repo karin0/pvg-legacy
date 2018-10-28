@@ -8,22 +8,29 @@ import requests
 from pixivpy3 import AppPixivAPI
 from prompt_toolkit import prompt
 from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.contrib.completers import WordCompleter
-from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-
-CONF_PATH = 'conf.json'
-
+try:
+    from prompt_toolkit.contrib.completers import WordCompleter
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    advanced_prompt = True
+except ImportError:
+    advanced_prompt = False
+    
 conf_pix_path = None
 conf_unused_path = None
 conf_req_path = None
 conf_username = None
 conf_passwd = None
+conf_max_page_count = -1
 conf = None
 net_accessable = False
 fav = []
 pix_files = set()
 api = AppPixivAPI()
 uid = 0
+
+CONF_PATH = 'conf.json'
+sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
+
 def to_filename(url):
     return url[url.rfind('/') + 1:]
 
@@ -49,7 +56,7 @@ def keep_trying(max_depth=5, catchee=BaseException):
             try:
                 return func(*args, **kwargs)
             except catchee as e:
-                print(f'Failed in depth {depth}: {e}')
+                print(f'Failed in depth {depth}: {type(e).__name__}: {e}')
                 return wrapper_2(args, kwargs, depth + 1)
         def wrapper(*args, **kwargs):
             return wrapper_2(args, kwargs, depth=0)
@@ -127,76 +134,88 @@ def count(filt):
 
 # file operation
 
-def unselect():
-    cnt = 0
-    for fn in os.listdir(conf_req_path):
-        if fn.lower() in pix_files:
-            cnt += 1
-            shutil.move(f'{conf_req_path}/{fn}', conf_pix_path)
-    print(f'Unselected {cnt} files.')
-
 def select(filt):
     pixs = find(filt)
-    unselect()
+    recover()
     for pix in pixs:
-        # assert(pix.is_downloaded())
         for fn in pix.filenames:
-            shutil.move(f'{conf_pix_path}/{fn}', conf_req_path)
+            url = f'{conf_pix_path}/{fn}'
+            if os.path.exists(url):
+                shutil.move(url, conf_req_path)
     print(f'Selected {len(pixs)} pixs.')
     return pixs
 
 def gen_pix_files():
     pix_files.clear()
     for pix in fav:
-        for x in pix.filenames:
-            pix_files.add(x.lower())
+        if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
+            for x in pix.filenames:
+                pix_files.add(x.lower())
+                
+def get_pix_urls():
+    pix_files.clear()
 
-def clean():
-    sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
-    print('Cleaning unavailable files..')
-    unselect()
+def recover():
+    gen_pix_files()
+    print('Moving requested files..')
     cnt = 0
-    for fn in os.listdir(conf_pix_path):
-        fnl = fn.lower()
-        if fnl not in pix_files and to_ext(fnl) in sufs:
-            shutil.move(f'{conf_pix_path}/{fn}', conf_unused_path)
+    for fn in os.listdir(conf_req_path):
+        if to_ext(fn.lower()) in sufs:
             cnt += 1
+            shutil.move(f'{conf_req_path}/{fn}', conf_pix_path)
+    print(f'Unselected {cnt} files.')
+    print('Cleaning unavailable files..')
+    cnt = 0
+    for path in (conf_pix_path, conf_req_path):
+        for fn in os.listdir(path):
+            fnl = fn.lower()
+            if fnl not in pix_files and to_ext(fnl) in sufs:
+                shutil.move(f'{path}/{fn}', conf_unused_path)
+                cnt += 1
     print('Cleaned %d files.' % cnt)
 
 class OperationFailedError(Exception):
     pass
 
-def download_all():
+def fetch():
+    wget_ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36'
+    wget_header = 'Referer: https://www.pixiv.net'
     @keep_trying()
     def run_wget(url):
         subprocess.run('wget -nv --timeout=5'
-        + ' --user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36"'
-        + f' --header="Referer: https://www.pixiv.net" -O {conf_pix_path}/{to_filename(url)} {url}',
+        + f' --user-agent="{wget_ua}"'
+        + f' --header="{wget_header}" -O {conf_pix_path}/{to_filename(url)} {url}',
         check=True, shell=True)
 
-    unselect()
-    if not net_accessable:
-        raise OperationFailedError('Internet unaccessable.')
+    recover()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
     ls_unused = set(os.listdir(conf_unused_path))
-    def filt(url):
-        fn = to_filename(url)
-        if fn not in ls_pix:
-            if fn in ls_unused: shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
-            else: return True
-        return False
-    que = [url for pix in fav for url in pix.urls if filt(url)]
+    que = []
+    cnt = 0
+    for pix in fav:
+        if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
+            for url in pix.urls:
+                fn = to_filename(url)
+                if fn not in ls_pix and fn in pix_files: # to leave out works with too many pages
+                    if fn in ls_unused:
+                        shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
+                        cnt += 1
+                    else: que.append(url)
+    if cnt:
+        print(f'Recovered {cnt} files from unused dir.')
     if not que:
         print('All pixs are downloaded.')
         return
+
+    if not net_accessable:
+        raise OperationFailedError('Internet unaccessable.')
     print(f'{len(que)} new files')
     cnt = 0
     for url in que:
         cnt += 1
         print(f'{cnt}/{len(que)}')
         run_wget(url)
-    clean()
     print('Downloaded all.')
 
 def update():
@@ -207,8 +226,8 @@ def update():
         shutil.move('fav.json', 'fav_bak.json')
     with open('fav.json', 'w', encoding='utf-8') as f:
         json.dump([pix.data for pix in fav], f)
-    gen_pix_files()
-    download_all()
+    # gen_pix_files() // do it in fetch -> recover
+    fetch()
 
 # interface
 
@@ -233,7 +252,7 @@ wfs = {
 }
 
 def shell_check():
-    print(f"{conf_username} UID: {uid}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files")
+    print(f"{conf_username} UID: {uid}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files, {len(pix_files)} local files")
 
 def shell_system_nohup(cmd):
     subprocess.run(f'nohup {cmd} &', shell=True)
@@ -255,23 +274,25 @@ def parse_filter(seq, any_mode=False):
 
 def shell():
     subs = {
-        'fetch': download_all, 
+        'fetch': fetch, 
         'update': update,
-        'clean': clean,
+        'recover': recover,
         'check': shell_check,
         'exit': lambda: sys.exit(),
-        'unselect': unselect,
         'open': lambda: shell_system_nohup('xdg-open .'),
         'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
     }
     history = InMemoryHistory()
-    comp_list = list(subs.keys()) + list(wfs.keys()) + list(get_all_tags().keys()) + ['select', 'select_any']
-    completer = WordCompleter(comp_list, ignore_case=True)
-
+    if advanced_prompt:
+        comp_list = list(subs.keys()) + list(wfs.keys()) + list(get_all_tags().keys()) + ['select', 'select_any']
+        completer = WordCompleter(comp_list, ignore_case=True)
+        suggester = AutoSuggestFromHistory()
+    else:
+        completer = suggester = None
     shell_check()
     while True:
         try:
-            line = prompt('> ', history=history, completer=completer, auto_suggest=AutoSuggestFromHistory())
+            line = prompt('> ', history=history, completer=completer, auto_suggest=suggester)
             args = line.split()
             if not args: continue
             cmd = args[0]
@@ -306,22 +327,22 @@ with open(CONF_PATH, encoding='utf-8') as fp:
 check_cmd('curl -V')
 check_cmd('wget -V')
 try:
-    check_cmd('curl https://www.pixiv.net -m 5')
+    check_cmd('curl https://www.pixiv.net -m 10')
     net_accessable = True
 except Exception:
     print('Warning: Internet unaccessable.')
-
 conf_username = conf['username']
 conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
 conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
+conf_max_page_count = conf['max_page_count'] # Always do fetch after modifying this
 assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, CONF_PATH])))
 
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
         fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
-    gen_pix_files()
+    fetch()
 except Exception as e:
     print('Warning: Cannot load from local fav:', e)
 
