@@ -182,7 +182,7 @@ def fetch():
     wget_header = 'Referer: https://www.pixiv.net'
     @keep_trying()
     def run_wget(url):
-        subprocess.run('wget -nv --timeout=5'
+        subprocess.run('wget -nv --timeout=20'
         + f' --user-agent="{wget_ua}"'
         + f' --header="{wget_header}" -O {conf_pix_path}/{to_filename(url)} {url}',
         check=True, shell=True)
