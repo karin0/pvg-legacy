@@ -22,7 +22,6 @@ conf_username = None
 conf_passwd = None
 conf_max_page_count = -1
 conf = None
-net_accessable = False
 fav = []
 pix_files = set()
 api = AppPixivAPI()
@@ -208,8 +207,6 @@ def fetch():
         print('All files are downloaded.')
         return
 
-    if not net_accessable:
-        raise OperationFailedError('Internet unaccessable.')
     print(f'{len(que)} files to download.')
     cnt = 0
     for url in que:
@@ -219,8 +216,6 @@ def fetch():
     print('Downloaded all.')
 
 def update():
-    if not net_accessable:
-        raise OperationFailedError('Internet unaccessable.')
     fetch_fav()
     if os.path.exists('fav.json'):
         shutil.move('fav.json', 'fav_bak.json')
@@ -326,11 +321,7 @@ with open(CONF_PATH, encoding='utf-8') as fp:
 
 check_cmd('curl -V')
 check_cmd('wget -V')
-try:
-    check_cmd('curl https://www.pixiv.net -m 10')
-    net_accessable = True
-except Exception:
-    print('Warning: Internet unaccessable.')
+# try check_cmd('curl https://www.pixiv.net -m 10')
 conf_username = conf['username']
 conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
