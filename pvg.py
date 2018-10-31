@@ -5,6 +5,7 @@ import shutil
 import sys
 import subprocess
 import requests
+from functools import reduce
 from pixivpy3 import AppPixivAPI
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
@@ -253,14 +254,13 @@ def shell_system(cmd):
 def parse_filter(seq, any_mode=False):
     if not seq: raise OperationFailedError('No arguments.')
     opt = (lambda x, y: x | y) if any_mode else (lambda x, y: x & y)
-    filt = wf_false if any_mode else wf_true
-    for cond in seq:
-        if cond.startswith('$'):
-            if cond in wfs: filt = opt(filt, wfs[cond])
-            elif cond[1] == '$': filt = opt(filt, ~wf_hat(cond[2:]))
-            else: raise OperationFailedError(f'Invalid syntax: {cond}')
-        else: filt = opt(filt, wf_hat(cond))
-    return filt
+    def conv(s):
+        if s.startswith('$'):
+            if s in wfs: return wfs[s]
+            if s[1] == '$': return ~wf_hat(s[2:])
+            else: raise OperationFailedError(f'Invalid syntax: {s}')
+        else: return wf_hat(s)
+    return reduce(opt, map(conv, seq))
 
 def shell():
     subs = {
@@ -272,7 +272,7 @@ def shell():
         'open': lambda: shell_system_nohup('xdg-open .'),
         'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
     }
-    comp_list = list(subs.keys()) + list(wfs.keys()) + ['select', 'select_any'] + list(get_all_tags().keys()) 
+    comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags().keys()) 
     completer = WordCompleter(comp_list, ignore_case=True)
     suggester = AutoSuggestFromHistory()
     session = PromptSession(completer=completer)
@@ -313,20 +313,19 @@ with open(CONF_PATH, encoding='utf-8') as fp:
 
 check_cmd('curl -V')
 check_cmd('wget -V')
-# try check_cmd('curl https://www.pixiv.net -m 10')
 conf_username = conf['username']
 conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
 conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
-conf_max_page_count = conf['max_page_count'] # Always do fetch after modifying this
+conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
 assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, CONF_PATH])))
 
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
         fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
 except Exception as e:
-    print('Warning: Cannot load from local fav:', e)
+    print('Cannot load from local fav:', e)
 else:
     fetch()
 
