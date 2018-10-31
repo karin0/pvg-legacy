@@ -45,13 +45,13 @@ def ckany(func, lst):
 def check_cmd(cmd):
     subprocess.check_call(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # assuming no spaces in args
 
-class MaxTryLimitExceed(Exception):
+class MaxTryLimitExceedError(Exception):
     pass
 
 def keep_trying(max_depth=5, catchee=BaseException):
     def decorater(func):
         def wrapper(args, kwargs, depth):
-            if depth >= max_depth: raise MaxTryLimitExceed
+            if depth >= max_depth: raise MaxTryLimitExceedError
             try:
                 return func(*args, **kwargs)
             except catchee as e:
@@ -180,10 +180,10 @@ def fetch():
     wget_ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36'
     wget_header = 'Referer: https://www.pixiv.net'
     @keep_trying()
-    def run_wget(url):
-        subprocess.run('wget -nv --timeout=20'
+    def run_wget():
+        subprocess.run('wget -nv -nc --timeout=20'
         + f' --user-agent="{wget_ua}"'
-        + f' --header="{wget_header}" -O {conf_pix_path}/{to_filename(url)} {url}',
+        + f' --header="{wget_header}" -P {conf_pix_path} -i down.txt',
         check=True, shell=True)
 
     recover()
@@ -200,7 +200,7 @@ def fetch():
                     if fn in ls_unused:
                         shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
                         cnt += 1
-                    else: que.append(url)
+                    else: que.append((url, pix.id))
     if cnt:
         print(f'Recovered {cnt} files from unused dir.')
     if not que:
@@ -208,11 +208,11 @@ def fetch():
         return
 
     print(f'{len(que)} files to download.')
-    cnt = 0
-    for url in que:
-        cnt += 1
-        print(f'{cnt}/{len(que)}')
-        run_wget(url)
+    que.sort(key=lambda x: x[1]) # by id of pix
+    with open('down.txt', 'w', encoding='utf-8') as fp:
+        for x in que:
+            fp.write(x[0] + '\n')
+    run_wget()
     print('Downloaded all.')
 
 def update():
@@ -273,7 +273,7 @@ def shell():
         'update': update,
         'recover': recover,
         'check': shell_check,
-        'eoit': lambda: sys.exit(),
+        'exit': lambda: sys.exit(),
         'open': lambda: shell_system_nohup('xdg-open .'),
         'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
     }
@@ -303,7 +303,7 @@ def shell():
             else: raise OperationFailedError('Unknown command.')
         except EOFError:
             sys.exit()
-        except Exception as e:
+        except (OperationFailedError, MaxTryLimitExceedError) as e:
             print(f'{type(e).__name__}: {e}')
 
 def get_all_tags():
@@ -333,9 +333,10 @@ assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_re
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
         fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
-    fetch()
 except Exception as e:
     print('Warning: Cannot load from local fav:', e)
+else:
+    fetch()
 
 if __name__ == '__main__':
     shell()
