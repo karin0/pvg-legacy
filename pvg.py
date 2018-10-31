@@ -6,14 +6,9 @@ import sys
 import subprocess
 import requests
 from pixivpy3 import AppPixivAPI
-from prompt_toolkit import prompt
-from prompt_toolkit.history import InMemoryHistory
-try:
-    from prompt_toolkit.contrib.completers import WordCompleter
-    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    advanced_prompt = True
-except ImportError:
-    advanced_prompt = False
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     
 conf_pix_path = None
 conf_unused_path = None
@@ -277,17 +272,14 @@ def shell():
         'open': lambda: shell_system_nohup('xdg-open .'),
         'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
     }
-    history = InMemoryHistory()
-    if advanced_prompt:
-        comp_list = list(subs.keys()) + list(wfs.keys()) + ['select', 'select_any'] + list(get_all_tags().keys()) 
-        completer = WordCompleter(comp_list, ignore_case=True)
-        suggester = AutoSuggestFromHistory()
-    else:
-        completer = suggester = None
+    comp_list = list(subs.keys()) + list(wfs.keys()) + ['select', 'select_any'] + list(get_all_tags().keys()) 
+    completer = WordCompleter(comp_list, ignore_case=True)
+    suggester = AutoSuggestFromHistory()
+    session = PromptSession(completer=completer)
     shell_check()
     while True:
         try:
-            line = prompt('> ', history=history, completer=completer, auto_suggest=suggester)
+            line = session.prompt('> ', auto_suggest=suggester, complete_while_typing=True)
             args = line.split()
             if not args: continue
             cmd = args[0]
