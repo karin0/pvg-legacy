@@ -273,13 +273,13 @@ def shell():
         'update': update,
         'recover': recover,
         'check': shell_check,
-        'exit': lambda: sys.exit(),
+        'eoit': lambda: sys.exit(),
         'open': lambda: shell_system_nohup('xdg-open .'),
         'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
     }
     history = InMemoryHistory()
     if advanced_prompt:
-        comp_list = list(subs.keys()) + list(wfs.keys()) + list(get_all_tags().keys()) + ['select', 'select_any']
+        comp_list = list(subs.keys()) + list(wfs.keys()) + ['select', 'select_any'] + list(get_all_tags().keys()) 
         completer = WordCompleter(comp_list, ignore_case=True)
         suggester = AutoSuggestFromHistory()
     else:
