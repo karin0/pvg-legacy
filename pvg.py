@@ -10,6 +10,7 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 def to_filename(url):
+    # TODO: ugoira -> webp
     return url[url.rfind('/') + 1:]
 def to_ext(fn):
     return fn[fn.rfind('.') + 1:]
