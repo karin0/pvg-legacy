@@ -1,50 +1,23 @@
 import os
 import json
-import time
 import shutil
 import sys
 import subprocess
-import requests
 from functools import reduce
 from pixivpy3 import AppPixivAPI
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-    
-conf_pix_path = None
-conf_unused_path = None
-conf_req_path = None
-conf_username = None
-conf_passwd = None
-conf_max_page_count = -1
-conf = None
-fav = []
-pix_files = set()
-api = AppPixivAPI()
-uid = 0
-
-CONF_PATH = 'conf.json'
-sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
 def to_filename(url):
     return url[url.rfind('/') + 1:]
-
 def to_ext(fn):
     return fn[fn.rfind('.') + 1:]
-
 def ckall(func, lst):
     return all((func(x) for x in lst))
-
 def ckany(func, lst):
     return any((func(x) for x in lst))
-
-def check_cmd(cmd):
-    subprocess.check_call(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # assuming no spaces in args
-
-class MaxTryLimitExceedError(Exception):
-    pass
-
-def keep_trying(max_depth=5, catchee=BaseException):
+def retry(max_depth=5, catchee=(BaseException, )):
     def decorater(func):
         def wrapper(args, kwargs, depth):
             if depth >= max_depth: raise MaxTryLimitExceedError
@@ -58,16 +31,27 @@ def keep_trying(max_depth=5, catchee=BaseException):
         return handler
     return decorater
 
+retry_def = retry()
+
 class Work(object):
     def __init__(self, data):
         self.data = data
         self.user_name = data['user']['name']
         self.tags = [x['name'] for x in data['tags']]
         self.spec = '$!$'.join(self.tags + [self.title])
-        self.urls = [data['meta_single_page']['original_image_url']] if data['meta_single_page'] \
-               else [x['image_urls']['original'] for x in data['meta_pages']]
+        if self.page_count == 1:
+            self.urls = [data['meta_single_page']['original_image_url']]
+        else:
+            self.urls = [x['image_urls']['original'] for x in data['meta_pages']]
         self.filenames = [to_filename(url) for url in self.urls]
-        self.intro = {'id': self.id, 'title': self.title, 'author': self.user_name, 'pages': self.page_count, 'likes': self.total_bookmarks, 'tags': self.tags}
+        self.intro = {
+            'id': self.id,
+            'title': self.title,
+            'author': self.user_name,
+            'pages': self.page_count,
+            'likes': self.total_bookmarks,
+            'tags': self.tags
+        }
     def __repr__(self):
         return repr(self.intro)
     def __str__(self):
@@ -87,39 +71,77 @@ class WorkFilter(object):
     def __invert__(self):
         return WorkFilter(lambda pix: not self.func(pix))
 
+class PvgError(Exception):
+    pass
+class MaxTryLimitExceedError(PvgError):
+    pass
+class OperationFailedError(PvgError):
+    pass
+class BadRequestError(PvgError):
+    pass
+
+# remote handler
+
 def login():
-    global uid
-    if not uid:
-        ret = api.login(conf_username, conf_passwd)
-        uid = int(ret['response']['user']['id'])
-        print("Logined, uid =", uid)
+    if not api.user_id:
+        retry_def(api.login)(conf_username, conf_passwd)
+        print("Logined, uid =", api.user_id)
 
-# database operation
+def _hnanowaikenaito_omoimasu():
+    update()
+    que = list(reversed([x for x in fav if 'R-18' in x.tags and x.pvg_restrict == 'public' and x.id not in _conf_nonh_id_except]))
+    tot = len(que)
+    cnt = 0
+    add_handler = retry_def(api.illust_bookmark_add)
+    delete_handler = retry_def(api.illust_bookmark_delete)
+    for pix in que:
+        cnt += 1
+        print(f'{cnt}/{tot}: {pix.title} ({pix.id})')
+        delete_handler(pix.id)
+        add_handler(pix.id, restrict='private')
+    update()
 
+# local db operation
 def fetch_fav():
     global fav
-    def foo(rest):
-        @keep_trying()
-        def api_handler(**args):
-            return api.user_bookmarks_illust(**args)
+    def foo(restrict):
+        @retry_def
+        def bookmarks_handler(**kwargs):
+            res = api.user_bookmarks_illust(**kwargs)
+            if 'illusts' not in res:
+                raise BadRequestError
+            return res
+        def pix_formatter(data):
+            data = dict(data)
+            data['pvg_restrict'] = restrict
+            return data
 
         cnt = 0
         nqs = dict()
         res = []
         while True:
-            r =      api_handler(**nqs)              if cnt  \
-                else api_handler(user_id=uid, restrict=rest)
+            if cnt: r = bookmarks_handler(**nqs)
+            else: r = bookmarks_handler(user_id=api.user_id, restrict=restrict)
             cnt += 1
-            print(f'{len(r.illusts)} on {rest} page #{cnt}')
-            res += list(map(dict, r.illusts))
+            print(f'{len(r.illusts)} on {restrict} page #{cnt}')
+            res += list(map(pix_formatter, r.illusts))
             if r.next_url is None:
                 break
             nqs = api.parse_qs(r.next_url)
         vres = [Work(data) for data in res if data['user']['id'] > 0]
-        print(f'{len(vres)} {rest} in total, {len(res) - len(vres)} invalid')
+        print(f'{len(vres)} {restrict} in total, {len(res) - len(vres)} invalid')
         return vres
     login()
     fav = foo('public') + foo('private')
+
+def update():
+    fetch_fav()
+    if os.path.exists('fav.json'):
+        shutil.move('fav.json', 'fav_bak.json')
+    with open('fav.json', 'w', encoding='utf-8') as f:
+        json.dump([pix.data for pix in fav], f)
+    # gen_pix_files() // do it in fetch -> recover
+    fetch()
 
 def find(filt):
     return [pix for pix in fav if filt(pix)]
@@ -169,19 +191,17 @@ def recover():
                 cnt += 1
     print('Cleaned %d files.' % cnt)
 
-class OperationFailedError(Exception):
-    pass
-
 def fetch():
+    '''
     wget_ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36'
     wget_header = 'Referer: https://www.pixiv.net'
-    @keep_trying()
+    @retry_def
     def run_wget():
         subprocess.run('wget -nv -nc --timeout=20'
         + f' --user-agent="{wget_ua}"'
         + f' --header="{wget_header}" -P {conf_pix_path} -i down.txt',
         check=True, shell=True)
-
+    '''
     recover()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
@@ -196,29 +216,28 @@ def fetch():
                     if fn in ls_unused:
                         shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
                         cnt += 1
-                    else: que.append((url, pix.id))
+                    else: que.append((url, fn, pix.title))
     if cnt:
         print(f'Recovered {cnt} files from unused dir.')
     if not que:
         print('All files are downloaded.')
         return
 
-    print(f'{len(que)} files to download.')
+    tot = len(que)
+    cnt = 0
+    download_handler = retry_def(api.download)
+    for tup in que:
+        cnt += 1
+        print(f'{cnt}/{tot}: {tup[1]} from {tup[2]}')
+        download_handler(tup[0], path=conf_pix_path, replace=True)
+    ''' # Wget way
     que.sort(key=lambda x: x[1]) # by id of pix
     with open('down.txt', 'w', encoding='utf-8') as fp:
         for x in que:
             fp.write(x[0] + '\n')
     run_wget()
+    '''
     print('Downloaded all.')
-
-def update():
-    fetch_fav()
-    if os.path.exists('fav.json'):
-        shutil.move('fav.json', 'fav_bak.json')
-    with open('fav.json', 'w', encoding='utf-8') as f:
-        json.dump([pix.data for pix in fav], f)
-    # gen_pix_files() // do it in fetch -> recover
-    fetch()
 
 # interface
 
@@ -243,7 +262,7 @@ wfs = {
 }
 
 def shell_check():
-    print(f"{conf_username} UID: {uid}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files, {len(pix_files)} local files")
+    print(f"{conf_username} uid: {api.user_id}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files, {len(pix_files)} local files")
 
 def shell_system_nohup(cmd):
     subprocess.run(f'nohup {cmd} &', shell=True)
@@ -270,7 +289,8 @@ def shell():
         'check': shell_check,
         'exit': lambda: sys.exit(),
         'open': lambda: shell_system_nohup('xdg-open .'),
-        'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}')
+        'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}'),
+        # '_hnano': _hnanowaikenaito_omoimasu
     }
     comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags().keys()) 
     completer = WordCompleter(comp_list, ignore_case=True)
@@ -295,7 +315,7 @@ def shell():
             else: raise OperationFailedError('Unknown command.')
         except EOFError:
             sys.exit()
-        except (OperationFailedError, MaxTryLimitExceedError) as e:
+        except PvgError as e:
             print(f'{type(e).__name__}: {e}')
 
 def get_all_tags():
@@ -308,23 +328,32 @@ def get_all_tags():
 
 # init
 
+CONF_PATH = 'conf.json'
+sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
+
+pix_files = set()
+api = AppPixivAPI()
+
 with open(CONF_PATH, encoding='utf-8') as fp:
     conf = json.load(fp, encoding='utf-8')
 
-check_cmd('curl -V')
-check_cmd('wget -V')
 conf_username = conf['username']
 conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
 conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
 conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
-assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, CONF_PATH])))
+try:
+    _conf_nonh_id_except = set(conf['_nonh_id_except'])
+except KeyError:
+    pass
+assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path])))
 
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
         fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
 except Exception as e:
+    fav = []
     print('Cannot load from local fav:', e)
 else:
     fetch()
