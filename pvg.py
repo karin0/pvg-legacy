@@ -94,11 +94,11 @@ def _hnanowaikenaito_omoimasu():
     tot = len(que)
     cnt = 0
     add_handler = retry_def(api.illust_bookmark_add)
-    delete_handler = retry_def(api.illust_bookmark_delete)
+    # delete_handler = retry_def(api.illust_bookmark_delete)
     for pix in que:
         cnt += 1
         print(f'{cnt}/{tot}: {pix.title} ({pix.id})')
-        delete_handler(pix.id)
+        # delete_handler(pix.id)
         add_handler(pix.id, restrict='private')
     update()
 
@@ -347,7 +347,7 @@ conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
 try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
 except KeyError:
-    pass
+    _conf_nonh_id_except = set()
 assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path])))
 
 try:
