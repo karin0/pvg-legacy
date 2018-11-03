@@ -1,8 +1,4 @@
-import os
-import json
-import shutil
-import sys
-import subprocess
+import os, json, shutil, sys, subprocess
 from functools import reduce
 from pixivpy3 import AppPixivAPI
 from prompt_toolkit import PromptSession
@@ -103,6 +99,7 @@ def _hnanowaikenaito_omoimasu():
     update()
 
 # local db operation
+
 def fetch_fav():
     global fav
     def foo(restrict):
