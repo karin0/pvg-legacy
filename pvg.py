@@ -377,7 +377,7 @@ try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
 except KeyError:
     _conf_nonh_id_except = set()
-assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path])))
+assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, conf_tmp_path])))
 
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
