@@ -222,6 +222,7 @@ def fetch():
     ls_unused = set(os.listdir(conf_unused_path))
     que = []
     cnt = 0
+    found_ugoira = False
     for pix in fav:
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
             for img in pix.srcs:
@@ -230,7 +231,11 @@ def fetch():
                     if fn in ls_unused:
                         shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
                         cnt += 1
-                    else: que.append((img[1], fn, pix))
+                    else:
+                        if not found_ugoira and img[1].endswith('zip'):
+                            check_cmd('convert -version')
+                            found_ugoira = True
+                        que.append((img[1], fn, pix))
     if cnt:
         print(f'Recovered {cnt} files from unused dir.')
     if not que:
@@ -356,7 +361,6 @@ def get_all_tags():
 
 # init
 
-check_cmd('convert -version') # imagemagick required for ugoira 2 gif
 CONF_PATH = 'conf.json'
 sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
