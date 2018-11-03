@@ -1,4 +1,4 @@
-import os, json, shutil, sys, subprocess
+import os, json, shutil, sys, subprocess, zipfile
 from functools import reduce
 from pixivpy3 import AppPixivAPI
 from prompt_toolkit import PromptSession
@@ -6,14 +6,23 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 def to_filename(url):
-    # TODO: ugoira -> webp
     return url[url.rfind('/') + 1:]
+def to_noext(fn):
+    return fn[:fn.rfind('.') + 1]
 def to_ext(fn):
     return fn[fn.rfind('.') + 1:]
+def re_ext(fn, new_ext):
+    return to_noext(fn) + new_ext
 def ckall(func, lst):
     return all((func(x) for x in lst))
 def ckany(func, lst):
     return any((func(x) for x in lst))
+def force_move(src, dest):
+    if os.path.exists(dest):
+        os.remove(dest)
+    shutil.move(src, dest)
+def check_cmd(cmd): # assuming no spaces in args
+    subprocess.check_call(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 def retry(max_depth=5, catchee=(BaseException, )):
     def decorater(func):
         def wrapper(args, kwargs, depth):
@@ -33,18 +42,23 @@ retry_def = retry()
 class Work(object):
     def __init__(self, data):
         self.data = data
-        self.user_name = data['user']['name']
+        dbg = data
+        self.author = data['user']['name']
         self.tags = [x['name'] for x in data['tags']]
         self.spec = '$!$'.join(self.tags + [self.title])
-        if self.page_count == 1:
-            self.urls = [data['meta_single_page']['original_image_url']]
+        if self.type == 'ugoira':
+            url = self.ugoira_metadata['zip_urls']['medium']
+            self.srcs = [(re_ext(to_filename(url), 'gif'), url)]
         else:
-            self.urls = [x['image_urls']['original'] for x in data['meta_pages']]
-        self.filenames = [to_filename(url) for url in self.urls]
+            if self.page_count == 1:
+                urls = [data['meta_single_page']['original_image_url']]
+            else:
+                urls = [x['image_urls']['original'] for x in data['meta_pages']]
+            self.srcs = [(to_filename(url), url) for url in urls]
         self.intro = {
             'id': self.id,
             'title': self.title,
-            'author': self.user_name,
+            'author': self.author,
             'pages': self.page_count,
             'likes': self.total_bookmarks,
             'tags': self.tags
@@ -86,7 +100,7 @@ def login():
 
 def _hnanowaikenaito_omoimasu():
     update()
-    que = list(reversed([x for x in fav if 'R-18' in x.tags and x.pvg_restrict == 'public' and x.id not in _conf_nonh_id_except]))
+    que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
     tot = len(que)
     cnt = 0
     add_handler = retry_def(api.illust_bookmark_add)
@@ -109,12 +123,8 @@ def fetch_fav():
             if 'illusts' not in res:
                 raise BadRequestError
             return res
-        def pix_formatter(data):
-            data = dict(data)
-            data['pvg_restrict'] = restrict
-            return data
-
         cnt = 0
+        icnt = 0
         nqs = dict()
         res = []
         while True:
@@ -122,20 +132,29 @@ def fetch_fav():
             else: r = bookmarks_handler(user_id=api.user_id, restrict=restrict)
             cnt += 1
             print(f'{len(r.illusts)} on {restrict} page #{cnt}')
-            res += list(map(pix_formatter, r.illusts))
+
+            for data in r.illusts:
+                if data['user']['id']:
+                    data = dict(data)
+                    data['bookmark_restrict'] = restrict
+                    if data['type'] == 'ugoira':
+                        data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata']
+                    res.append(Work(data))
+                else:
+                    icnt += 1
+
             if r.next_url is None:
                 break
             nqs = api.parse_qs(r.next_url)
-        vres = [Work(data) for data in res if data['user']['id'] > 0]
-        print(f'{len(vres)} {restrict} in total, {len(res) - len(vres)} invalid')
-        return vres
+        print(f'{len(res)} {restrict} in total, {icnt} invalid')
+        return res
     login()
     fav = foo('public') + foo('private')
 
 def update():
     fetch_fav()
     if os.path.exists('fav.json'):
-        shutil.move('fav.json', 'fav_bak.json')
+        force_move('fav.json', 'fav_bak.json')
     with open('fav.json', 'w', encoding='utf-8') as f:
         json.dump([pix.data for pix in fav], f)
     # gen_pix_files() // do it in fetch -> recover
@@ -153,8 +172,8 @@ def select(filt):
     pixs = find(filt)
     recover()
     for pix in pixs:
-        for fn in pix.filenames:
-            url = f'{conf_pix_path}/{fn}'
+        for img in pix.srcs:
+            url = f'{conf_pix_path}/{img[0]}'
             if os.path.exists(url):
                 shutil.move(url, conf_req_path)
     print(f'Selected {len(pixs)} pixs.')
@@ -164,12 +183,9 @@ def gen_pix_files():
     pix_files.clear()
     for pix in fav:
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
-            for x in pix.filenames:
-                pix_files.add(x.lower())
+            for img in pix.srcs:
+                pix_files.add(img[0].lower())
                 
-def get_pix_urls():
-    pix_files.clear()
-
 def recover():
     gen_pix_files()
     print('Moving requested files..')
@@ -208,13 +224,13 @@ def fetch():
     cnt = 0
     for pix in fav:
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
-            for url in pix.urls:
-                fn = to_filename(url)
-                if fn not in ls_pix and fn in pix_files: # to leave out works with too many pages
+            for img in pix.srcs:
+                fn = img[0]
+                if fn not in ls_pix and fn.lower() in pix_files: # to leave out works with too many pages
                     if fn in ls_unused:
                         shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
                         cnt += 1
-                    else: que.append((url, fn, pix.title))
+                    else: que.append((img[1], fn, pix))
     if cnt:
         print(f'Recovered {cnt} files from unused dir.')
     if not que:
@@ -226,8 +242,22 @@ def fetch():
     download_handler = retry_def(api.download)
     for tup in que:
         cnt += 1
-        print(f'{cnt}/{tot}: {tup[1]} from {tup[2]}')
-        download_handler(tup[0], path=conf_pix_path, replace=True)
+        print(f'{cnt}/{tot}: {tup[1]} from {tup[2].title}')
+        if tup[0].endswith('.zip'):
+            assert(tup[2].type == 'ugoira' and tup[1].endswith('.gif'))
+            download_handler(tup[0], path=conf_tmp_path, replace=True)
+            with zipfile.ZipFile(conf_tmp_path + '/' + to_filename(tup[0])) as zfp:
+                zfp.extractall(conf_tmp_path)
+            args = ['convert']
+            for img in tup[2].ugoira_metadata['frames']:
+                args += ['-delay', str(img['delay']/10), conf_tmp_path + '/' + img['file']]
+            args += [f'{conf_tmp_path}/tmp.gif']
+            print('Running imagemagick...')
+            subprocess.check_call(args)
+            force_move(f'{conf_tmp_path}/tmp.gif', f'{conf_pix_path}/{tup[1]}')
+        else:
+            download_handler(tup[0], path=conf_pix_path, replace=True)
+            
     ''' # Wget way
     que.sort(key=lambda x: x[1]) # by id of pix
     with open('down.txt', 'w', encoding='utf-8') as fp:
@@ -260,7 +290,7 @@ wfs = {
 }
 
 def shell_check():
-    print(f"{conf_username} uid: {api.user_id}, {len(fav)} likes, {sum((len(pix.urls) for pix in fav))} files, {len(pix_files)} local files")
+    print(f"{conf_username} uid: {api.user_id}, {len(fav)} likes, {sum((len(pix.srcs) for pix in fav))} files, {len(pix_files)} local files")
 
 def shell_system_nohup(cmd):
     subprocess.run(f'nohup {cmd} &', shell=True)
@@ -326,6 +356,7 @@ def get_all_tags():
 
 # init
 
+check_cmd('convert -version') # imagemagick required for ugoira 2 gif
 CONF_PATH = 'conf.json'
 sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
@@ -340,6 +371,7 @@ conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
 conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
+conf_tmp_path = conf['tmp_path']
 conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
 try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
