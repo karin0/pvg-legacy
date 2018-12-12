@@ -263,7 +263,7 @@ def fetch():
         else:
             download_handler(tup[0], path=conf_pix_path, replace=True)
             
-    ''' # Wget way
+    ''' Wget way
     que.sort(key=lambda x: x[1]) # by id of pix
     with open('down.txt', 'w', encoding='utf-8') as fp:
         for x in que:
@@ -381,7 +381,9 @@ try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
 except KeyError:
     _conf_nonh_id_except = set()
-assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path, conf_tmp_path])))
+assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path])))
+if not os.path.exists(conf_tmp_path):
+    os.makedirs(conf_tmp_path)
 
 try:
     with open('fav.json', 'r', encoding='utf-8') as fp:
