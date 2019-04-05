@@ -114,45 +114,55 @@ def _hnanowaikenaito_omoimasu():
 
 # local db operation
 
-def fetch_fav():
+def fetch_fav(quick):
     global fav
-    def foo(restrict):
+    if quick:
+        ids = {pix.id for pix in fav}
+    else:
+        fav = []
+
+    def fetch_by_restrict(restrict):
         @retry_def
         def bookmarks_handler(**kwargs):
             res = api.user_bookmarks_illust(**kwargs)
             if 'illusts' not in res:
                 raise BadRequestError
             return res
-        cnt = 0
-        icnt = 0
+        cnt = icnt = ucnt = rcnt = 0
         nqs = dict()
         res = []
+        r = bookmarks_handler(user_id=api.user_id, restrict=restrict)
         while True:
-            if cnt: r = bookmarks_handler(**nqs)
-            else: r = bookmarks_handler(user_id=api.user_id, restrict=restrict)
             cnt += 1
             print(f'{len(r.illusts)} on {restrict} page #{cnt}')
 
             for data in r.illusts:
                 if data['user']['id']:
+                    if data['type'] == 'ugoira':
+                        ucnt += 1
+                        continue
+                        # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
+                    if quick and data['id'] in ids:
+                        print(f'{rcnt} {restrict} new in total, {icnt} invalid, {ucnt} ugoira skipped')
+                        return
                     data = dict(data)
                     data['bookmark_restrict'] = restrict
-                    if data['type'] == 'ugoira':
-                        data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata']
-                    res.append(Work(data))
+                    fav.append(Work(data)) # no need to add the id to ids
+                    rcnt += 1
                 else:
                     icnt += 1
 
             if r.next_url is None:
                 break
-            nqs = api.parse_qs(r.next_url)
-        print(f'{len(res)} {restrict} in total, {icnt} invalid')
-        return res
+            r = bookmarks_handler(**api.parse_qs(r.next_url))
+        print(f'{rcnt} {restrict} in total, {icnt} invalid, {ucnt} ugoira skipped')
+    
     login()
-    fav = foo('public') + foo('private')
+    fetch_by_restrict('public')
+    fetch_by_restrict('private')
 
-def update():
-    fetch_fav()
+def update(quick = False):
+    fetch_fav(quick)
     if os.path.exists('fav.json'):
         force_move('fav.json', 'fav_bak.json')
     with open('fav.json', 'w', encoding='utf-8') as f:
@@ -318,6 +328,7 @@ def shell():
     subs = {
         'fetch': fetch, 
         'update': update,
+        'qupdate': lambda: update(True),
         'recover': recover,
         'check': shell_check,
         'exit': lambda: sys.exit(),
@@ -377,6 +388,7 @@ conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
 conf_tmp_path = conf['tmp_path']
 conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
+# conf_ignore_ugoira = conf['ignore_ugoira']
 try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
 except KeyError:
