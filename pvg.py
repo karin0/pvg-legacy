@@ -1,6 +1,7 @@
-import os, json, shutil, sys, subprocess, zipfile
+import os, json, shutil, sys, subprocess #, zipfile
 from functools import reduce
 from pixivpy3 import AppPixivAPI
+from pyaria2 import Aria2RPC
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -101,13 +102,11 @@ def login():
 def _hnanowaikenaito_omoimasu():
     update()
     que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
-    tot = len(que)
-    cnt = 0
     add_handler = retry_def(api.illust_bookmark_add)
     # delete_handler = retry_def(api.illust_bookmark_delete)
-    for pix in que:
-        cnt += 1
-        print(f'{cnt}/{tot}: {pix.title} ({pix.id})')
+    tot = len(que)
+    for i, pix in enumerate(que, 1):
+        print(f'{i}/{tot}: {pix.title} ({pix.id})')
         # delete_handler(pix.id)
         add_handler(pix.id, restrict='private')
     update()
@@ -216,23 +215,12 @@ def recover():
     print('Cleaned %d files.' % cnt)
 
 def fetch():
-    '''
-    wget_ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36'
-    wget_header = 'Referer: https://www.pixiv.net'
-    @retry_def
-    def run_wget():
-        subprocess.run('wget -nv -nc --timeout=20'
-        + f' --user-agent="{wget_ua}"'
-        + f' --header="{wget_header}" -P {conf_pix_path} -i down.txt',
-        check=True, shell=True)
-    '''
     recover()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
     ls_unused = set(os.listdir(conf_unused_path))
     que = []
     cnt = 0
-    found_ugoira = False
     for pix in fav:
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
             for img in pix.srcs:
@@ -242,45 +230,45 @@ def fetch():
                         shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
                         cnt += 1
                     else:
-                        if not found_ugoira and img[1].endswith('zip'):
-                            check_cmd('convert -version')
-                            found_ugoira = True
                         que.append((img[1], fn, pix))
     if cnt:
         print(f'Recovered {cnt} files from unused dir.')
     if not que:
         print('All files are downloaded.')
         return
+    # (done) generate aria2.conf first
+    with open('aria2-tmpl.conf') as ft, open('aria2.conf', 'w') as fc:
+        fc.write(ft.read().format(dir=os.path.abspath(conf_pix_path)))
+    try:
+        env = os.environ.copy()
+        env['LANG']='en_US.utf-8' # ! linux only now
+        proc = subprocess.Popen(
+            (['proxychains'] if conf_proxychains_for_aria2 else []) +
+            ['aria2c', '--conf', 'aria2.conf'],
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.DEVNULL,
+            env=env) # (done) force proxychains now
 
-    tot = len(que)
-    cnt = 0
-    download_handler = retry_def(api.download)
-    for tup in que:
-        cnt += 1
-        print(f'{cnt}/{tot}: {tup[1]} from {tup[2].title}')
-        if tup[0].endswith('.zip'):
-            assert(tup[2].type == 'ugoira' and tup[1].endswith('.gif'))
-            download_handler(tup[0], path=conf_tmp_path, replace=True)
-            with zipfile.ZipFile(conf_tmp_path + '/' + to_filename(tup[0])) as zfp:
-                zfp.extractall(conf_tmp_path)
-            args = ['convert']
-            for img in tup[2].ugoira_metadata['frames']:
-                args += ['-delay', str(img['delay']/10), conf_tmp_path + '/' + img['file']]
-            args += [f'{conf_tmp_path}/tmp.gif']
-            print('Running imagemagick...')
-            subprocess.check_call(args)
-            force_move(f'{conf_tmp_path}/tmp.gif', f'{conf_pix_path}/{tup[1]}')
-        else:
-            download_handler(tup[0], path=conf_pix_path, replace=True)
-            
-    ''' Wget way
-    que.sort(key=lambda x: x[1]) # by id of pix
-    with open('down.txt', 'w', encoding='utf-8') as fp:
-        for x in que:
-            fp.write(x[0] + '\n')
-    run_wget()
-    '''
-    print('Downloaded all.')
+        s = proc.stdout.readline().decode()
+        while 'listening on' not in s:
+            s = proc.stdout.readline().decode()
+
+        aria2 = Aria2RPC() # ! bug if pvg has proxychains
+        tot = len(que)
+        for i, tup in enumerate(que, 1):
+            print(f'{i}/{tot}: {tup[1]} from {tup[2].title}')
+            aria2.addUri([tup[0]], {})
+        cnt = 0
+        for s in proc.stdout:
+            s = s.decode().strip()
+            if 'Download complete' in s:
+                cnt += 1
+                print(f'{cnt}/{tot}', s)
+            if cnt >= tot:
+                break
+        print('Downloaded all.')
+    finally:
+        proc.terminate()
 
 # interface
 
@@ -388,6 +376,7 @@ conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
 conf_tmp_path = conf['tmp_path']
 conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
+conf_proxychains_for_aria2 = conf['proxychains_for_aria2']
 # conf_ignore_ugoira = conf['ignore_ugoira']
 try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
