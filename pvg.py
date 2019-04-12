@@ -48,8 +48,11 @@ class Work(object):
         self.tags = [x['name'] for x in data['tags']]
         self.spec = '$!$'.join(self.tags + [self.title])
         if self.type == 'ugoira':
+            self.srcs = []
+            '''
             url = self.ugoira_metadata['zip_urls']['medium']
             self.srcs = [(re_ext(to_filename(url), 'gif'), url)]
+            '''
         else:
             if self.page_count == 1:
                 urls = [data['meta_single_page']['original_image_url']]
@@ -127,7 +130,7 @@ def fetch_fav(quick):
             if 'illusts' not in res:
                 raise BadRequestError
             return res
-        cnt = icnt = ucnt = rcnt = 0
+        cnt = icnt = rcnt = 0
         nqs = dict()
         res = []
         r = bookmarks_handler(user_id=api.user_id, restrict=restrict)
@@ -137,12 +140,14 @@ def fetch_fav(quick):
 
             for data in r.illusts:
                 if data['user']['id']:
+                    '''
                     if data['type'] == 'ugoira':
                         ucnt += 1
                         continue
+                    '''
                         # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
                     if quick and data['id'] in ids:
-                        print(f'{rcnt} {restrict} new in total, {icnt} invalid, {ucnt} ugoira skipped')
+                        print(f'{rcnt} {restrict} new in total, {icnt} invalid')
                         return
                     data = dict(data)
                     data['bookmark_restrict'] = restrict
@@ -154,7 +159,7 @@ def fetch_fav(quick):
             if r.next_url is None:
                 break
             r = bookmarks_handler(**api.parse_qs(r.next_url))
-        print(f'{rcnt} {restrict} in total, {icnt} invalid, {ucnt} ugoira skipped')
+        print(f'{rcnt} {restrict} in total, {icnt} invalid')
     
     login()
     fetch_by_restrict('public')
