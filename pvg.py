@@ -267,10 +267,9 @@ def fetch():
         cnt = 0
         for s in proc.stdout:
             s = s.decode().strip()
-            print(s)
             if 'Download complete' in s:
                 cnt += 1
-                # print(f'{cnt}/{tot}', s)
+                print(f'{cnt}/{tot}', s)
             if cnt >= tot:
                 break
         print('Downloaded all.')
