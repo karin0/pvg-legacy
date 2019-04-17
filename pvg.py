@@ -43,7 +43,6 @@ retry_def = retry()
 class Work(object):
     def __init__(self, data):
         self.data = data
-        dbg = data
         self.author = data['user']['name']
         self.tags = [x['name'] for x in data['tags']]
         self.spec = '$!$'.join(self.tags + [self.title])
@@ -145,7 +144,7 @@ def fetch_fav(quick):
                         ucnt += 1
                         continue
                     '''
-                        # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
+                    # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
                     if quick and data['id'] in ids:
                         print(f'{rcnt} {restrict} new in total, {icnt} invalid')
                         return
@@ -243,7 +242,9 @@ def fetch():
         return
     # (done) generate aria2.conf first
     with open('aria2-tmpl.conf') as ft, open('aria2.conf', 'w') as fc:
-        fc.write(ft.read().format(dir=os.path.abspath(conf_pix_path)))
+        fc.write(ft.read().format(
+            dir=os.path.abspath(conf_pix_path)
+        ))
     try:
         env = os.environ.copy()
         env['LANG']='en_US.utf-8' # ! linux only now
@@ -266,9 +267,10 @@ def fetch():
         cnt = 0
         for s in proc.stdout:
             s = s.decode().strip()
+            print(s)
             if 'Download complete' in s:
                 cnt += 1
-                print(f'{cnt}/{tot}', s)
+                # print(f'{cnt}/{tot}', s)
             if cnt >= tot:
                 break
         print('Downloaded all.')
