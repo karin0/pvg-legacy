@@ -253,7 +253,8 @@ def fetch():
             ['aria2c', '--conf', 'aria2.conf'],
             stdout=subprocess.PIPE, 
             stderr=subprocess.DEVNULL,
-            env=env) # (done) force proxychains now
+            env=env
+        ) # (done) force proxychains now
 
         s = proc.stdout.readline().decode()
         while 'listening on' not in s:
@@ -274,6 +275,15 @@ def fetch():
                 break
         print('Downloaded all.')
     finally:
+        if cnt < tot:
+            for fn in os.listdir(conf_pix_path):
+                if fn.endswith('.aria2'):
+                    os.remove(fn)
+                    s = fn[:-6]
+                    try:
+                        os.remove(s)
+                    except FileNotFoundError:
+                        pass
         proc.terminate()
 
 # interface
