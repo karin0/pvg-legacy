@@ -8,12 +8,8 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 uopen = partial(open, encoding='utf-8')
 def to_filename(url):
     return url[url.rfind('/') + 1:]
-def to_noext(fn):
-    return fn[:fn.rfind('.') + 1]
 def to_ext(fn):
     return fn[fn.rfind('.') + 1:]
-def re_ext(fn, new_ext):
-    return to_noext(fn) + new_ext
 def ckall(func, lst):
     return all((func(x) for x in lst))
 def ckany(func, lst):
@@ -22,8 +18,6 @@ def force_move(src, dest):
     if os.path.exists(dest):
         os.remove(dest)
     shutil.move(src, dest)
-def check_cmd(cmd): # assuming no spaces in args
-    subprocess.check_call(cmd.split(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 def retry(max_depth=5, catchee=(BaseException, )):
     def decorater(func):
         def wrapper(args, kwargs, depth):
@@ -327,7 +321,6 @@ def parse_filter(seq, any_mode=False):
     return reduce(opt, map(conv, seq))
 
 def shell():
-    srun = partial(subprocess.run, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subs = {
         'download': download, 
         'update': update,
@@ -398,7 +391,7 @@ conf_req_path = conf['req_path']
 conf_tmp_path = conf['tmp_path']
 conf_max_page_count = conf['max_page_count'] # do download after modifying this
 # conf_proxychains_for_aria2 = conf['proxychains_for_aria2']
-# conf_ignore_ugoira = conf['ignore_ugoira']
+# conf_ignore_ugoira = conf['ignore_ugoira'] # it is true
 try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
 except KeyError:
