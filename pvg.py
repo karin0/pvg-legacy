@@ -1,11 +1,11 @@
-import os, json, shutil, sys, subprocess #, zipfile
-from functools import reduce
+import os, json, shutil, sys, subprocess
+from functools import reduce, partial
 from pixivpy3 import AppPixivAPI
-from pyaria2 import Aria2RPC
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
+uopen = partial(open, encoding='utf-8')
 def to_filename(url):
     return url[url.rfind('/') + 1:]
 def to_noext(fn):
@@ -94,12 +94,7 @@ class OperationFailedError(PvgError):
 class BadRequestError(PvgError):
     pass
 
-# remote handler
-
-def login():
-    if not api.user_id:
-        retry_def(api.login)(conf_username, conf_passwd)
-        print("Logined, uid =", api.user_id)
+# remote
 
 def _hnanowaikenaito_omoimasu():
     update()
@@ -113,16 +108,16 @@ def _hnanowaikenaito_omoimasu():
         add_handler(pix.id, restrict='private')
     update()
 
-# local db operation
+# db
 
-def fetch_fav(quick):
+def update(quick = False):
     global fav
     if quick:
         ids = {pix.id for pix in fav}
     else:
         fav = []
 
-    def fetch_by_restrict(restrict):
+    def fetch(restrict):
         @retry_def
         def bookmarks_handler(**kwargs):
             res = api.user_bookmarks_illust(**kwargs)
@@ -160,18 +155,19 @@ def fetch_fav(quick):
             r = bookmarks_handler(**api.parse_qs(r.next_url))
         print(f'{rcnt} {restrict} in total, {icnt} invalid')
     
-    login()
-    fetch_by_restrict('public')
-    fetch_by_restrict('private')
 
-def update(quick = False):
-    fetch_fav(quick)
+    if not api.user_id:
+        retry_def(api.login)(conf_username, conf_passwd)
+        print("Logined, uid =", api.user_id)
+    fetch('public')
+    fetch('private')
+
     if os.path.exists('fav.json'):
         force_move('fav.json', 'fav_bak.json')
-    with open('fav.json', 'w', encoding='utf-8') as f:
+    with uopen('fav.json', 'w') as f:
         json.dump([pix.data for pix in fav], f)
-    # gen_pix_files() // do it in fetch -> recover
-    fetch()
+    # gen_pix_files() // do it in download -> restore
+    download()
 
 def find(filt):
     return [pix for pix in fav if filt(pix)]
@@ -183,7 +179,7 @@ def count(filt):
 
 def select(filt):
     pixs = find(filt)
-    recover()
+    restore()
     for pix in pixs:
         for img in pix.srcs:
             url = f'{conf_pix_path}/{img[0]}'
@@ -199,7 +195,7 @@ def gen_pix_files():
             for img in pix.srcs:
                 pix_files.add(img[0].lower())
                 
-def recover():
+def restore():
     gen_pix_files()
     print('Moving requested files..')
     cnt = 0
@@ -216,10 +212,10 @@ def recover():
             if fnl not in pix_files and to_ext(fnl) in sufs:
                 shutil.move(f'{path}/{fn}', conf_unused_path)
                 cnt += 1
-    print('Cleaned %d files.' % cnt)
+    print(f'Cleaned {cnt} files.')
 
-def fetch():
-    recover()
+def download():
+    restore()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
     ls_unused = set(os.listdir(conf_unused_path))
@@ -236,35 +232,36 @@ def fetch():
                     else:
                         que.append((img[1], fn, pix))
     if cnt:
-        print(f'Recovered {cnt} files from unused dir.')
+        print(f'restored {cnt} files from unused path.')
     if not que:
         print('All files are downloaded.')
         return
+
+    urls_path = f'{conf_tmp_path}/urls'
+    aria2_conf_path = f'{conf_tmp_path}/aria2.conf'
+    tot = len(que)
+    print(f'{tot} files to download.')
+    with uopen(urls_path, 'w') as fp:
+        for i, tup in enumerate(que, 1):
+            print(f'{i}/{tot}: {tup[1]} from {tup[2].title}')
+            fp.write(tup[0] + '\n')
     # (done) generate aria2.conf first
-    with open('aria2-tmpl.conf') as ft, open('aria2.conf', 'w') as fc:
+    with uopen('aria2-tmpl.conf') as ft, uopen(aria2_conf_path, 'w') as fc:
         fc.write(ft.read().format(
-            dir=os.path.abspath(conf_pix_path)
+            dir=os.path.abspath(conf_pix_path),
+            input_file=os.path.abspath(urls_path)
         ))
     try:
         env = os.environ.copy()
         env['LANG']='en_US.utf-8' # ! linux only now
         proc = subprocess.Popen(
-            (['proxychains'] if conf_proxychains_for_aria2 else []) +
-            ['aria2c', '--conf', 'aria2.conf'],
+            # (['proxychains'] if conf_proxychains_for_aria2 else []) +
+            ['aria2c', '--conf', f'{aria2_conf_path}'],
             stdout=subprocess.PIPE, 
             stderr=subprocess.DEVNULL,
             env=env
         ) # (done) force proxychains now
-
-        s = proc.stdout.readline().decode()
-        while 'listening on' not in s:
-            s = proc.stdout.readline().decode()
-
-        aria2 = Aria2RPC() # ! bug if pvg has proxychains
-        tot = len(que)
-        for i, tup in enumerate(que, 1):
-            print(f'{i}/{tot}: {tup[1]} from {tup[2].title}')
-            aria2.addUri([tup[0]], {})
+        print('Aria2c started.')
         cnt = 0
         for s in proc.stdout:
             s = s.decode().strip()
@@ -273,6 +270,7 @@ def fetch():
                 print(f'{cnt}/{tot}', s)
             if cnt >= tot:
                 break
+        proc.wait()
         print('Downloaded all.')
     finally:
         if cnt < tot:
@@ -284,7 +282,7 @@ def fetch():
                         os.remove(s)
                     except FileNotFoundError:
                         pass
-        proc.terminate()
+        # proc.terminate()
 
 # interface
 
@@ -300,7 +298,7 @@ def wf_hat(tag):
 wf_true = WorkFilter(lambda pix: True)
 wf_false = WorkFilter(lambda pix: False)
 wf_w = WorkFilter(lambda pix: pix.width >= pix.height)
-wf_h = wf_hayt('R-18', 'R-17', 'R-16', 'R-15')
+wf_h = wf_hayt('R-18')
 wfs = {
     '$h': wf_h,
     '$$h': ~wf_h,
@@ -329,15 +327,20 @@ def parse_filter(seq, any_mode=False):
     return reduce(opt, map(conv, seq))
 
 def shell():
+    srun = partial(subprocess.run, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subs = {
-        'fetch': fetch, 
+        'download': download, 
         'update': update,
         'qupdate': lambda: update(True),
-        'recover': recover,
+        'restore': restore,
         'check': shell_check,
-        'exit': lambda: sys.exit(),
-        'open': lambda: shell_system_nohup('xdg-open .'),
-        'gopen': lambda: shell_system_nohup(f'gthumb {conf_req_path}'),
+        'exit': sys.exit,
+        'open': lambda: subprocess.run(
+            args=['xdg-open', '.'], 
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+        'gthumb': lambda: subprocess.Popen(
+            args=['gthumb', conf_req_path],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # '_hnano': _hnanowaikenaito_omoimasu
     }
     comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags().keys()) 
@@ -352,8 +355,10 @@ def shell():
             if not args: continue
             cmd = args[0]
             if cmd in subs: subs[cmd]()
-            elif cmd.startswith('select') or cmd[0] == '?':
+            elif cmd == 'select' or cmd[0] == '?':
                 select(parse_filter(args[1:]))
+            elif cmd == 'select_any':
+                select(parse_filter(args[1:], True))
             elif cmd == 'count':
                 count(parse_filter(args[1:]))
             elif line[0] == '!':
@@ -382,7 +387,7 @@ sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 
 pix_files = set()
 api = AppPixivAPI()
 
-with open(CONF_PATH, encoding='utf-8') as fp:
+with uopen(CONF_PATH) as fp:
     conf = json.load(fp, encoding='utf-8')
 
 conf_username = conf['username']
@@ -391,25 +396,25 @@ conf_pix_path = conf['pix_path']
 conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
 conf_tmp_path = conf['tmp_path']
-conf_max_page_count = conf['max_page_count'] # do fetch after modifying this
-conf_proxychains_for_aria2 = conf['proxychains_for_aria2']
+conf_max_page_count = conf['max_page_count'] # do download after modifying this
+# conf_proxychains_for_aria2 = conf['proxychains_for_aria2']
 # conf_ignore_ugoira = conf['ignore_ugoira']
 try:
     _conf_nonh_id_except = set(conf['_nonh_id_except'])
 except KeyError:
     _conf_nonh_id_except = set()
-assert(all((os.path.exists(x) for x in [conf_pix_path, conf_unused_path, conf_req_path])))
-if not os.path.exists(conf_tmp_path):
-    os.makedirs(conf_tmp_path)
+for s in [conf_pix_path, conf_unused_path, conf_req_path, conf_tmp_path]:
+    if not os.path.isdir(s):
+        os.makedirs(s)
 
 try:
-    with open('fav.json', 'r', encoding='utf-8') as fp:
-        fav = [Work(data) for data in json.load(fp, encoding='utf-8')]
+    with uopen('fav.json', 'r') as fp:
+        fav = list(map(Work, json.load(fp, encoding='utf-8')))
 except Exception as e:
     fav = []
     print('Cannot load from local fav:', e)
 else:
-    fetch()
+    download()
 
 if __name__ == '__main__':
     shell()
