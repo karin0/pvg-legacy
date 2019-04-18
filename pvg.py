@@ -163,7 +163,7 @@ def update(quick = False):
     fetch('private')
 
     if os.path.exists('fav.json'):
-        force_move('fav.json', 'fav_bak.json')
+        force_move('fav.json', f'{conf_tmp_path}/fav-old.json')
     with uopen('fav.json', 'w') as f:
         json.dump([pix.data for pix in fav], f)
     # gen_pix_files() // do it in download -> restore
