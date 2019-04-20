@@ -271,7 +271,7 @@ def download():
         env['LANG']='en_US.utf-8' # ! linux only now
         proc = subprocess.Popen(
             # (['proxychains'] if conf_proxychains_for_aria2 else []) +
-            ['aria2c', '--conf', f'{aria2_conf_path}'],
+            ['aria2c', '--conf', aria2_conf_path],
             stdout=subprocess.PIPE, 
             stderr=subprocess.DEVNULL,
             env=env
