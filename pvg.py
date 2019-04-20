@@ -208,6 +208,27 @@ def restore():
                 cnt += 1
     print(f'Cleaned {cnt} files.')
 
+def gen_aria2_conf(**kwargs):
+    return '''\
+user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36
+referer=https://www.pixiv.net
+allow-overwrite=true
+lowest-speed-limit=10K
+continue=false
+max-concurrent-downloads=10
+split=5
+min-split-size=5M
+max-connection-per-server=16
+disable-ipv6=true
+max-tries=5
+enable-rpc=false
+dir={dir}
+enable-mmap=true
+file-allocation=prealloc
+disk-cache=64M
+input-file={input_file}\
+'''.format(**kwargs)
+
 def download():
     restore()
     print('Counting undownloaded files..')
@@ -239,9 +260,9 @@ def download():
         for i, tup in enumerate(que, 1):
             print(f'{i}/{tot}: {tup[1]} from {tup[2].title}')
             fp.write(tup[0] + '\n')
-    # (done) generate aria2.conf first
-    with uopen('aria2-tmpl.conf') as ft, uopen(aria2_conf_path, 'w') as fc:
-        fc.write(ft.read().format(
+
+    with uopen(aria2_conf_path, 'w') as fp:
+        fp.write(gen_aria2_conf(
             dir=os.path.abspath(conf_pix_path),
             input_file=os.path.abspath(urls_path)
         ))
