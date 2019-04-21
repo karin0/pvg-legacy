@@ -224,7 +224,7 @@ max-tries=5
 enable-rpc=false
 dir={dir}
 enable-mmap=true
-file-allocation=prealloc
+file-allocation={file_allocation}
 disk-cache=64M
 input-file={input_file}\
 '''.format(**kwargs)
@@ -264,7 +264,8 @@ def download():
     with uopen(aria2_conf_path, 'w') as fp:
         fp.write(gen_aria2_conf(
             dir=os.path.abspath(conf_pix_path),
-            input_file=os.path.abspath(urls_path)
+            input_file=os.path.abspath(urls_path),
+            file_allocation='falloc' if os.name == 'nt' else 'prealloc' # ! not for ext
         ))
     try:
         env = os.environ.copy()
