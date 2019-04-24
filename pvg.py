@@ -1,5 +1,6 @@
 import os, json, shutil, sys, subprocess
 from functools import reduce, partial
+from collections import Counter
 from pixivpy3 import AppPixivAPI
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
@@ -382,21 +383,13 @@ def shell():
         except PvgError as e:
             print(f'{type(e).__name__}: {e}')
 
-def get_all_tags():
-    # return reduce(lambda x, y: x + y, (Counter(pix.tags) for pix in fav))
-    tags = set()
+def get_all_tags(struct=set):
+    tags = struct()
     for pix in fav:
         tags.update(pix.tags)
     return tags
 
-def count_all_tags():
-    # return reduce(lambda x, y: x + y, (Counter(pix.tags) for pix in fav))
-    tags = dict()
-    for pix in fav:
-        for tag in pix.tags:
-            if tag in tags: tags[tag] += 1
-            else: tags[tag] = 1
-    return tags
+count_all_tags = partial(get_all_tags, struct=Counter)
 
 # init
 
