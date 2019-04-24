@@ -6,5 +6,5 @@
     "req_path":  "./req",
     "tmp_path": "./tmp",
     "max_page_count": -1,
-    "proxychains_for_aria2": false
+    "aria2_proxy": ""
 }

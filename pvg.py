@@ -88,20 +88,6 @@ class OperationFailedError(PvgError):
 class BadRequestError(PvgError):
     pass
 
-# remote
-
-def _hnanowaikenaito_omoimasu():
-    update()
-    que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
-    add_handler = retry_def(api.illust_bookmark_add)
-    # delete_handler = retry_def(api.illust_bookmark_delete)
-    tot = len(que)
-    for i, pix in enumerate(que, 1):
-        print(f'{i}/{tot}: {pix.title} ({pix.id})')
-        # delete_handler(pix.id)
-        add_handler(pix.id, restrict='private')
-    update()
-
 # db
 
 def update(quick = False):
@@ -210,7 +196,7 @@ def restore():
 
 def gen_aria2_conf(**kwargs):
     return '''\
-user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.155 Safari/537.36
+user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/73.0.3683.103 Safari/537.36
 referer=https://www.pixiv.net
 allow-overwrite=true
 lowest-speed-limit=10K
@@ -226,8 +212,19 @@ dir={dir}
 enable-mmap=true
 file-allocation={file_allocation}
 disk-cache=64M
-input-file={input_file}\
+input-file={input_file}
+all-proxy={all_proxy}\
 '''.format(**kwargs)
+
+def clean_aria2():
+    for fn in os.listdir(conf_pix_path):
+        if fn.endswith('.aria2'):
+            print('Found', fn)
+            os.remove(f'{conf_pix_path}/{fn}')
+            try:
+                os.remove(f'{conf_pix_path}/{fn[:-6]}')
+            except FileNotFoundError:
+                pass
 
 def download():
     restore()
@@ -265,7 +262,8 @@ def download():
         fp.write(gen_aria2_conf(
             dir=os.path.abspath(conf_pix_path),
             input_file=os.path.abspath(urls_path),
-            file_allocation='falloc' if os.name == 'nt' else 'prealloc' # ! not for ext
+            file_allocation='falloc' if os.name == 'nt' else 'prealloc', # ! not for ext
+            all_proxy=conf_aria2_proxy
         ))
     try:
         env = os.environ.copy()
@@ -281,24 +279,19 @@ def download():
         cnt = 0
         for s in proc.stdout:
             s = s.decode().strip()
+            # print(s)
             if 'Download complete' in s:
                 cnt += 1
                 print(f'{cnt}/{tot}', s)
             if cnt >= tot:
                 break
-        proc.wait()
-        print('Downloaded all.')
+        # proc.wait()\
+        print('All done!')
     finally:
+        proc.terminate()
         if cnt < tot:
-            for fn in os.listdir(conf_pix_path):
-                if fn.endswith('.aria2'):
-                    os.remove(fn)
-                    s = fn[:-6]
-                    try:
-                        os.remove(s)
-                    except FileNotFoundError:
-                        pass
-        # proc.terminate()
+            print('Something went wrong.')
+            clean_aria2()
 
 # interface
 
@@ -358,7 +351,7 @@ def shell():
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # '_hnano': _hnanowaikenaito_omoimasu
     }
-    comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags().keys()) 
+    comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags()) 
     completer = WordCompleter(comp_list, ignore_case=True)
     suggester = AutoSuggestFromHistory()
     session = PromptSession(completer=completer)
@@ -369,7 +362,8 @@ def shell():
             args = line.split()
             if not args: continue
             cmd = args[0]
-            if cmd in subs: subs[cmd]()
+            if cmd in subs:
+                subs[cmd]()
             elif cmd == 'select' or cmd[0] == '?':
                 select(parse_filter(args[1:]))
             elif cmd == 'select_any':
@@ -379,14 +373,24 @@ def shell():
             elif line[0] == '!':
                 if line[1] == '!': shell_system_nohup(line[2:])
                 else: shell_system(line[1:])
-            elif line[0] == '$': exec(line[1:])
-            else: raise OperationFailedError('Unknown command.')
+            elif line[0] == '$':
+                exec(line[1:])
+            else:
+                raise OperationFailedError('Unknown command.')
         except EOFError:
             sys.exit()
         except PvgError as e:
             print(f'{type(e).__name__}: {e}')
 
 def get_all_tags():
+    # return reduce(lambda x, y: x + y, (Counter(pix.tags) for pix in fav))
+    tags = set()
+    for pix in fav:
+        tags.update(pix.tags)
+    return tags
+
+def count_all_tags():
+    # return reduce(lambda x, y: x + y, (Counter(pix.tags) for pix in fav))
     tags = dict()
     for pix in fav:
         for tag in pix.tags:
@@ -411,13 +415,11 @@ conf_pix_path = conf['pix_path']
 conf_unused_path = conf['unused_path']
 conf_req_path = conf['req_path']
 conf_tmp_path = conf['tmp_path']
-conf_max_page_count = conf['max_page_count'] # do download after modifying this
+conf_max_page_count = conf.get('max_page_count', -1) # do download after modifying this
+conf_aria2_proxy = conf.get('aria2_proxy', '') # do download after modifying this
 # conf_proxychains_for_aria2 = conf['proxychains_for_aria2']
 # conf_ignore_ugoira = conf['ignore_ugoira'] # it is true
-try:
-    _conf_nonh_id_except = set(conf['_nonh_id_except'])
-except KeyError:
-    _conf_nonh_id_except = set()
+# _conf_nonh_id_except = set(conf.get('_nonh_id_except', ()))
 for s in [conf_pix_path, conf_unused_path, conf_req_path, conf_tmp_path]:
     if not os.path.isdir(s):
         os.makedirs(s)
