@@ -1,4 +1,4 @@
-import os, json, shutil, sys, subprocess
+import os, json, shutil, sys, subprocess, webbrowser
 from functools import reduce, partial
 from collections import Counter
 from pixivpy3 import AppPixivAPI
@@ -41,6 +41,7 @@ class Work(object):
         self.author = data['user']['name']
         self.tags = [x['name'] for x in data['tags']]
         self.spec = '$!$'.join(self.tags + [self.title])
+        self.likes = data['total_bookmarks']
         if self.type == 'ugoira':
             self.srcs = []
             '''
@@ -58,7 +59,7 @@ class Work(object):
             'title': self.title,
             'author': self.author,
             'pages': self.page_count,
-            'likes': self.total_bookmarks,
+            'likes': self.likes,
             'tags': self.tags
         }
     def __repr__(self):
@@ -67,6 +68,8 @@ class Work(object):
         return str(self.intro)
     def __getattr__(self, item):
         return self.data[item]
+    def _open(self):
+        return webbrowser.open(f'https://www.pixiv.net/member_illust.php?mode=medium&illust_id={self.id}')
         
 class WorkFilter(object):
     def __init__(self, func):
@@ -87,6 +90,8 @@ class MaxTryLimitExceedError(PvgError):
 class OperationFailedError(PvgError):
     pass
 class BadRequestError(PvgError):
+    pass
+class DownloadUncompletedError(PvgError):
     pass
 
 # db
@@ -286,13 +291,16 @@ def download():
                 print(f'{cnt}/{tot}', s)
             if cnt >= tot:
                 break
+        else:
+            raise DownloadUncompletedError
         # proc.wait()\
         print('All done!')
+    except DownloadUncompletedError:
+        print('Download not completed.')
+        clean_aria2()
+        raise DownloadUncompletedError
     finally:
         proc.terminate()
-        if cnt < tot:
-            print('Something went wrong.')
-            clean_aria2()
 
 # interface
 
@@ -389,7 +397,7 @@ def get_all_tags(struct=set):
         tags.update(pix.tags)
     return tags
 
-count_all_tags = partial(get_all_tags, struct=Counter)
+_count_all_tags = partial(get_all_tags, struct=Counter)
 
 # init
 
@@ -420,6 +428,7 @@ for s in [conf_pix_path, conf_unused_path, conf_req_path, conf_tmp_path]:
 try:
     with uopen('fav.json', 'r') as fp:
         fav = list(map(Work, json.load(fp, encoding='utf-8')))
+    fav.sort(key=lambda pix: -pix.likes)
 except Exception as e:
     fav = []
     print('Cannot load from local fav:', e)
