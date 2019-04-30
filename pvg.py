@@ -182,6 +182,7 @@ def gen_pix_files():
                 pix_files.add(img[0].lower())
                 
 def restore():
+    clean_aria2()
     gen_pix_files()
     print('Moving requested files..')
     cnt = 0
