@@ -93,6 +93,8 @@ class BadRequestError(PvgError):
     pass
 class DownloadUncompletedError(PvgError):
     pass
+class ConfMissing(PvgError):
+    pass
 
 # db
 
@@ -209,6 +211,7 @@ allow-overwrite=true
 lowest-speed-limit=10K
 continue=false
 max-concurrent-downloads=10
+timeout=8
 split=5
 min-split-size=5M
 max-connection-per-server=16
@@ -219,6 +222,7 @@ dir={dir}
 enable-mmap=true
 file-allocation={file_allocation}
 disk-cache=64M
+check-certificate=false
 input-file={input_file}
 all-proxy={all_proxy}\
 '''.format(**kwargs)
@@ -402,15 +406,21 @@ _count_all_tags = partial(get_all_tags, struct=Counter)
 
 # init
 
+def load_conf():
+    l = (f'conf-{os.name}.json', 'conf.json')
+    for fn in l:
+        if os.path.exists(fn):
+            with uopen(fn) as fp:
+                return json.load(fp, encoding='utf-8')
+    raise ConfMissing(f'Cannot load configuration from {l}')
+
 CONF_PATH = 'conf.json'
 sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
 pix_files = set()
 api = AppPixivAPI()
 
-with uopen(CONF_PATH) as fp:
-    conf = json.load(fp, encoding='utf-8')
-
+conf = load_conf()
 conf_username = conf['username']
 conf_passwd = conf['passwd']
 conf_pix_path = conf['pix_path']
