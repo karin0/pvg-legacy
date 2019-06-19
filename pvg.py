@@ -330,7 +330,7 @@ wfs = {
 }
 
 def shell_check():
-    print(f"{conf_username} uid: {api.user_id}, {len(fav)} likes, {sum((len(pix.srcs) for pix in fav))} files, {len(pix_files)} local files")
+    print(f'{conf_username} uid: {api.user_id}, {len(fav)} likes, {sum((len(pix.srcs) for pix in fav))} files, {len(pix_files)} local files')
 
 def shell_system_nohup(cmd):
     subprocess.run(f'nohup {cmd} &', shell=True)
