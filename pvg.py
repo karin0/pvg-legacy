@@ -96,7 +96,41 @@ class DownloadUncompletedError(PvgError):
 class ConfMissing(PvgError):
     pass
 
-# db
+# remote db
+
+def login():
+    if not api.user_id:
+        retry_def(api.login)(conf_username, conf_passwd)
+        print("Logined, uid =", api.user_id)
+
+
+def greendam(quick = False):
+    login()
+    update(quick)
+    # que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
+    add_handler = retry_def(api.illust_bookmark_add)
+    que = list(reversed([pix for pix in fav if 'R-18' in pix.tags and pix.bookmark_restrict == 'public']))
+    tot = len(que)
+    for i, pix in enumerate(que, 1):
+        print(f'{i}/{tot}: {pix.title} ({pix.id})')
+        add_handler(pix.id, restrict='private')
+        pix.data['bookmark_restrict'] = 'private' # Be careful when assigning to "attributes" of Works.. maybe we can remove the "data" field
+    fav_save()
+    # update()
+
+# local db
+
+def fav_save(): # call after local db is modified
+    if os.path.exists('fav.json'):
+        force_move('fav.json', f'{conf_tmp_path}/fav-old.json')
+    with uopen('fav.json', 'w') as f:
+        json.dump([pix.data for pix in fav], f)
+
+def fav_load():
+    global fav
+    with uopen('fav.json', 'r') as fp:
+        fav = list(map(Work, json.load(fp, encoding='utf-8')))
+    # fav.sort(key=lambda pix: -pix.likes)
 
 def update(quick = False):
     global fav
@@ -144,16 +178,11 @@ def update(quick = False):
         print(f'{rcnt} {restrict} in total, {icnt} invalid')
     
 
-    if not api.user_id:
-        retry_def(api.login)(conf_username, conf_passwd)
-        print("Logined, uid =", api.user_id)
+    login()
     fetch('public')
     fetch('private')
 
-    if os.path.exists('fav.json'):
-        force_move('fav.json', f'{conf_tmp_path}/fav-old.json')
-    with uopen('fav.json', 'w') as f:
-        json.dump([pix.data for pix in fav], f)
+    fav_save()
     # gen_pix_files() // do it in download -> restore
     download()
 
@@ -353,7 +382,9 @@ def shell():
     subs = {
         'download': download, 
         'update': update,
-        'qupdate': lambda: update(True),
+        'qupd': lambda: update(True),
+        'greendam': greendam, 
+        'qgreen': lambda: greendam(True),
         'restore': restore,
         'check': shell_check,
         'exit': sys.exit,
@@ -437,9 +468,7 @@ for s in [conf_pix_path, conf_unused_path, conf_req_path, conf_tmp_path]:
         os.makedirs(s)
 
 try:
-    with uopen('fav.json', 'r') as fp:
-        fav = list(map(Work, json.load(fp, encoding='utf-8')))
-    fav.sort(key=lambda pix: -pix.likes)
+    fav_load()
 except Exception as e:
     fav = []
     print('Cannot load from local fav:', e)
