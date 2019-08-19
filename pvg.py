@@ -246,7 +246,6 @@ min-split-size=5M
 max-connection-per-server=16
 disable-ipv6=true
 max-tries=5
-enable-rpc=false
 dir={dir}
 enable-mmap=true
 file-allocation={file_allocation}
@@ -254,6 +253,9 @@ disk-cache=64M
 check-certificate=false
 input-file={input_file}
 all-proxy={all_proxy}\
+enable-rpc=true
+rpc-allow-origin-all=true
+rpc-listen-all=true
 '''.format(**kwargs)
 
 def clean_aria2():
@@ -277,7 +279,7 @@ def download():
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
             for img in pix.srcs:
                 fn = img[0]
-                if fn not in ls_pix and fn.lower() in pix_files: # to leave out works with too many pages
+                if fn not in ls_pix and fn.lower() in pix_files:
                     if fn in ls_unused:
                         shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
                         cnt += 1
@@ -320,7 +322,7 @@ def download():
         for s in proc.stdout:
             s = s.decode().strip()
             # print(s)
-            if 'Download complete' in s:
+            if 'Download complete' in s or '下载已完成' in s:
                 cnt += 1
                 print(f'{cnt}/{tot}', s)
             if cnt >= tot:
