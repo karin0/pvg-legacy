@@ -111,7 +111,7 @@ def greendam(quick = False):
     update(quick)
     # que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
     add_handler = retry_def(api.illust_bookmark_add)
-    que = list(reversed([pix for pix in fav if 'R-18' in pix.tags and pix.bookmark_restrict == 'public']))
+    que = list(reversed(lambda pix: 'R-18' in pix.tags and pix.bookmark_restrict == 'public', fav))
     tot = len(que)
     for i, pix in enumerate(que, 1):
         print(f'{i}/{tot}: {pix.title} ({pix.id})')
@@ -212,8 +212,8 @@ def gen_pix_files():
     for pix in fav:
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
             for img in pix.srcs:
-                pix_files[img[0].lower()] = img[1]
-                
+                pix_files[img[0].lower()] = (img[1], pix)
+
 def restore():
     clean_aria2()
     gen_pix_files()
@@ -290,7 +290,6 @@ def download():
                 print(f'Warn: {path} from local source does not exist!')
                 pass
 
-
     que = []
     cnt = 0
     extcnt = 0
@@ -299,7 +298,7 @@ def download():
     #         for img in pix.srcs:
     #             fn = img[0]
     #             if fn not in ls_pix and fn.lower() in pix_files:
-    for fn, url in pix_files.items():
+    for fn, (url, pix) in pix_files.items():
         if fn not in ls_pix:
             if fn in ls_unused:
                 shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
@@ -360,9 +359,10 @@ def download():
         print('All done!')
     except DownloadUncompletedError:
         print('Download not completed.')
+        proc.terminate()
         clean_aria2()
         raise DownloadUncompletedError
-    finally:
+    else:
         proc.terminate()
 
 # interface
