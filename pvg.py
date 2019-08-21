@@ -7,6 +7,8 @@ from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 
 uopen = partial(open, encoding='utf-8')
+def fixed_path(path):
+    return path[:-1] if path.endswith('/') else path
 def to_filename(url):
     return url[url.rfind('/') + 1:]
 def to_ext(fn):
@@ -210,7 +212,7 @@ def gen_pix_files():
     for pix in fav:
         if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
             for img in pix.srcs:
-                pix_files.add(img[0].lower())
+                pix_files[img[0].lower()] = img[1]
                 
 def restore():
     clean_aria2()
@@ -273,20 +275,45 @@ def download():
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
     ls_unused = set(os.listdir(conf_unused_path))
+    ls_extra = dict()
+    if conf_local_source and os.path.exists(conf_local_source):
+        print('Local source is avaliable.')
+        for x in ('pix', 'req', 'unused'):
+            try:
+                print('Listing ', x)
+                path = f'{conf_local_source}/{x}/'
+                ls = os.listdir(path)
+                for fn in ls:
+                    ls_extra[fn] = path + fn
+                print(f'Found {len(ls)} files from {x} dir.')
+            except FileNotFoundError:
+                print(f'Warn: {path} from local source does not exist!')
+                pass
+
+
     que = []
     cnt = 0
-    for pix in fav:
-        if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
-            for img in pix.srcs:
-                fn = img[0]
-                if fn not in ls_pix and fn.lower() in pix_files:
-                    if fn in ls_unused:
-                        shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
-                        cnt += 1
-                    else:
-                        que.append((img[1], fn, pix))
+    extcnt = 0
+    # for pix in fav:
+    #     if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
+    #         for img in pix.srcs:
+    #             fn = img[0]
+    #             if fn not in ls_pix and fn.lower() in pix_files:
+    for fn, url in pix_files.items():
+        if fn not in ls_pix:
+            if fn in ls_unused:
+                shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
+                cnt += 1
+            elif fn in ls_extra:
+                print(f'Found {fn} from local source!')
+                shutil.copy(ls_extra[fn], conf_pix_path)
+                extcnt += 1
+            else:
+                que.append((url, fn, pix))
     if cnt:
-        print(f'restored {cnt} files from unused path.')
+        print(f'Restored {cnt} files from unused path.')
+    if extcnt:
+        print(f'Copied {extcnt} files from local source.')
     if not que:
         print('All files are downloaded.')
         return
@@ -450,18 +477,19 @@ def load_conf():
 CONF_PATH = 'conf.json'
 sufs = {'bmp', 'jpg', 'png', 'tiff', 'tif', 'gif', 'pcx', 'tga', 'exif', 'fpx', 'svg', 'psd', 'cdr', 'pcd', 'dxf', 'ufo', 'eps', 'ai', 'raw', 'wmf', 'webp'}
 
-pix_files = set()
+pix_files = dict()
 api = AppPixivAPI()
 
 conf = load_conf()
 conf_username = conf['username']
 conf_passwd = conf['passwd']
-conf_pix_path = conf['pix_path']
-conf_unused_path = conf['unused_path']
-conf_req_path = conf['req_path']
-conf_tmp_path = conf['tmp_path']
+conf_pix_path = fixed_path(conf['pix_path'])
+conf_unused_path = fixed_path(conf['unused_path'])
+conf_req_path = fixed_path(conf['req_path'])
+conf_tmp_path = fixed_path(conf['tmp_path'])
 conf_max_page_count = conf.get('max_page_count', -1) # do download after modifying this
 conf_aria2_proxy = conf.get('aria2_proxy', '') # do download after modifying this
+conf_local_source = fixed_path(conf['local_source']) if 'local_source' in conf else None
 # conf_proxychains_for_aria2 = conf['proxychains_for_aria2']
 # conf_ignore_ugoira = conf['ignore_ugoira'] # it is true
 # _conf_nonh_id_except = set(conf.get('_nonh_id_except', ()))
