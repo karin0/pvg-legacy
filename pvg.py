@@ -308,7 +308,7 @@ def download():
                 shutil.copy(ls_extra[fn], conf_pix_path)
                 extcnt += 1
             else:
-                que.append((url, fn, pix))
+                que.append((fn, url, pix))
     if cnt:
         print(f'Restored {cnt} files from unused path.')
     if extcnt:
@@ -322,9 +322,9 @@ def download():
     tot = len(que)
     print(f'{tot} files to download.')
     with uopen(urls_path, 'w') as fp:
-        for i, tup in enumerate(que, 1):
-            print(f'{i}/{tot}: {tup[1]} from {tup[2].title}')
-            fp.write(tup[0] + '\n')
+        for i, (fn, url, pix) in enumerate(que, 1):
+            print(f'{i}/{tot}: {fn} from {pix.title}')
+            fp.write(url + '\n')
 
     with uopen(aria2_conf_path, 'w') as fp:
         fp.write(gen_aria2_conf(
