@@ -392,12 +392,13 @@ def wf_hat(tag):
 wf_true = WorkFilter(lambda pix: True)
 wf_false = WorkFilter(lambda pix: False)
 wf_w = WorkFilter(lambda pix: pix.width >= pix.height)
+wf_nw = WorkFilter(lambda pix: pix.width <= pix.height)
 wf_h = wf_hayt('R-18')
 wfs = {
     '$h': wf_h,
     '$$h': ~wf_h,
     '$w': wf_w,
-    '$$w' : ~wf_w
+    '$$w' : wf_nw
 }
 
 def shell_check():
