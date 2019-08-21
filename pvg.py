@@ -210,7 +210,7 @@ def select(filt):
 def gen_pix_files():
     pix_files.clear()
     for pix in fav:
-        if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
+        if conf_max_page_count < 0 or pix.page_count <= conf_max_page_count:
             for img in pix.srcs:
                 pix_files[img[0].lower()] = (img[1], pix)
 
@@ -270,12 +270,14 @@ def clean_aria2():
             except FileNotFoundError:
                 pass
 
+ls_extra = dict()
 def download():
     restore()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
     ls_unused = set(os.listdir(conf_unused_path))
-    ls_extra = dict()
+
+    ls_extra.clear()
     if conf_local_source and os.path.exists(conf_local_source):
         print('Local source is avaliable.')
         for x in ('pix', 'req', 'unused'):
@@ -294,7 +296,7 @@ def download():
     cnt = 0
     extcnt = 0
     # for pix in fav:
-    #     if conf_max_page_count <= 0 or pix.page_count <= conf_max_page_count:
+    #     if conf_max_page_count < 0 or pix.page_count <= conf_max_page_count:
     #         for img in pix.srcs:
     #             fn = img[0]
     #             if fn not in ls_pix and fn.lower() in pix_files:
@@ -366,6 +368,17 @@ def download():
         proc.terminate()
 
 # interface
+
+def _to_push(lim = 10): # Call download before this
+    if not (conf_local_source and os.path.exists(conf_local_source)):
+        print('Local source not found.')
+    # restore()
+    def wrapper(pix):
+        if lim >= 0 and pix.page_count > lim:
+            return False
+        return ckany(lambda img: img[0] not in ls_extra, pix.srcs)
+    print('Remember to transfer the db file.')
+    return WorkFilter(wrapper)
 
 def wf_halt(*tgs):
     return WorkFilter(lambda pix: ckall(lambda x: x in pix.spec, tgs))
