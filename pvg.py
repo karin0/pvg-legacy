@@ -72,7 +72,7 @@ class Work(object):
         return self.data[item]
     def _open(self):
         return webbrowser.open(f'https://www.pixiv.net/member_illust.php?mode=medium&illust_id={self.id}')
-        
+
 class WorkFilter(object):
     def __init__(self, func):
         self.func = func
@@ -178,7 +178,7 @@ def update(quick = False):
                 break
             r = bookmarks_handler(**api.parse_qs(r.next_url))
         print(f'{rcnt} {restrict} in total, {icnt} invalid')
-    
+
 
     login()
     fetch('public')
@@ -277,8 +277,7 @@ def download():
     ls_pix = set(os.listdir(conf_pix_path))
     ls_unused = set(os.listdir(conf_unused_path))
 
-    ls_extra.clear()
-    if conf_local_source and os.path.exists(conf_local_source):
+    if not ls_extra and conf_local_source and os.path.exists(conf_local_source):
         print('Local source is avaliable.')
         for x in ('pix', 'req', 'unused'):
             try:
@@ -341,7 +340,7 @@ def download():
         proc = subprocess.Popen(
             # (['proxychains'] if conf_proxychains_for_aria2 else []) +
             ['aria2c', '--conf', aria2_conf_path],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env=env
         ) # (done) force proxychains now
@@ -378,7 +377,8 @@ def _to_push(lim = 10): # Call download before this
             return False
         return ckany(lambda img: img[0] not in ls_extra, pix.srcs)
     print('Remember to transfer the db file.')
-    return WorkFilter(wrapper)
+    select(WorkFilter(wrapper))
+    sys.exit(0)
 
 def wf_halt(*tgs):
     return WorkFilter(lambda pix: ckall(lambda x: x in pix.spec, tgs))
@@ -423,23 +423,23 @@ def parse_filter(seq, any_mode=False):
 
 def shell():
     subs = {
-        'download': download, 
+        'download': download,
         'update': update,
         'qupd': lambda: update(True),
-        'greendam': greendam, 
+        'greendam': greendam,
         'qgreen': lambda: greendam(True),
         'restore': restore,
         'check': shell_check,
-        'exit': sys.exit,
+        'exit': lambda: sys.exit(0)
         'open': lambda: subprocess.run(
-            args=['xdg-open', '.'], 
+            args=['xdg-open', '.'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
         'gthumb': lambda: subprocess.Popen(
             args=['gthumb', conf_req_path],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # '_hnano': _hnanowaikenaito_omoimasu
     }
-    comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags()) 
+    comp_list = list(subs.keys()) + ['select', 'select_any'] + list(wfs.keys()) + list(get_all_tags())
     completer = WordCompleter(comp_list, ignore_case=True)
     suggester = AutoSuggestFromHistory()
     session = PromptSession(completer=completer)
@@ -476,7 +476,7 @@ def get_all_tags(struct=set):
         tags.update(pix.tags)
     return tags
 
-_count_all_tags = partial(get_all_tags, struct=Counter)
+_count_all_tags = lambda: get_all_tags(Counter)
 
 # init
 
