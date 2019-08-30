@@ -430,7 +430,7 @@ def shell():
         'qgreen': lambda: greendam(True),
         'restore': restore,
         'check': shell_check,
-        'exit': lambda: sys.exit(0)
+        'exit': lambda: sys.exit(0),
         'open': lambda: subprocess.run(
             args=['xdg-open', '.'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
