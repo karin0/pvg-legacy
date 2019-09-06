@@ -378,7 +378,6 @@ def _to_push(lim = 10): # Call download before this
         return ckany(lambda img: img[0] not in ls_extra, pix.srcs)
     print('Remember to transfer the db file.')
     select(WorkFilter(wrapper))
-    sys.exit(0)
 
 def wf_halt(*tgs):
     return WorkFilter(lambda pix: ckall(lambda x: x in pix.spec, tgs))
