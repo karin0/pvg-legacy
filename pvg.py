@@ -111,9 +111,9 @@ def greendam(quick = False):
     update(quick)
     # que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
     add_handler = retry_def(api.illust_bookmark_add)
-    que = list(reversed(lambda pix: 'R-18' in pix.tags and pix.bookmark_restrict == 'public', fav))
+    que = [pix for pix in fav if 'R-18' in pix.tags and pix.bookmark_restrict == 'public']
     tot = len(que)
-    for i, pix in enumerate(que, 1):
+    for i, pix in enumerate(reversed(que), 1):
         print(f'{i}/{tot}: {pix.title} ({pix.id})')
         add_handler(pix.id, restrict='private')
         pix.data['bookmark_restrict'] = 'private' # Be careful when assigning to "attributes" of Works.. maybe we can remove the "data" field
