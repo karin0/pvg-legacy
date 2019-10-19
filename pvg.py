@@ -279,7 +279,7 @@ def download():
 
     if not ls_extra and conf_local_source and os.path.exists(conf_local_source):
         print('Local source is avaliable.')
-        for x in ('pix', 'req', 'unused'):
+        for x in ('pix', 'req', 'unused', 'ext'):
             try:
                 print('Listing ', x)
                 path = f'{conf_local_source}/{x}/'
@@ -288,7 +288,7 @@ def download():
                     ls_extra[fn] = path + fn
                 print(f'Found {len(ls)} files from {x} dir.')
             except FileNotFoundError:
-                print(f'Warn: {path} from local source does not exist!')
+                print(f'{path} from local source does not exist!')
                 pass
 
     que = []
@@ -393,11 +393,14 @@ wf_false = WorkFilter(lambda pix: False)
 wf_w = WorkFilter(lambda pix: pix.width >= pix.height)
 wf_nw = WorkFilter(lambda pix: pix.width <= pix.height)
 wf_h = wf_hayt('R-18')
+wf_hh = WorkFilter(lambda pix: 'R-18' in pix.spec and pix.page_count <= 1)
 wfs = {
     '$h': wf_h,
     '$$h': ~wf_h,
     '$w': wf_w,
-    '$$w' : wf_nw
+    '$$w' : wf_nw,
+    '$hh': wf_hh,
+    '$$hh': ~wf_hh
 }
 
 def shell_check():
@@ -447,7 +450,8 @@ def shell():
         try:
             line = session.prompt('> ', auto_suggest=suggester, complete_while_typing=True)
             args = line.split()
-            if not args: continue
+            if not args:
+                continue
             cmd = args[0]
             if cmd in subs:
                 subs[cmd]()
