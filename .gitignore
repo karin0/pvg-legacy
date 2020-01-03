@@ -5,4 +5,5 @@
 !aria2-tmpl.conf
 !requirements.txt
 !static
-!static/*
+!static/**
+
