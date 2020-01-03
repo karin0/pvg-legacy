@@ -1,6 +1,6 @@
 *
+!*.py
 !.gitignore
-!pvg.py
-!conf_example.json
 !README.md
 !aria2-tmpl.conf
+!requirements.txt
