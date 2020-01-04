@@ -1,5 +1,4 @@
 *
-frontend/build
 !*.py
 !.gitignore
 !README.md
@@ -7,3 +6,4 @@ frontend/build
 !requirements.txt
 !frontend/**
 !frontend
+frontend/build
