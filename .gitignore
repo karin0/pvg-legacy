@@ -6,5 +6,7 @@
 !requirements.txt
 !frontend
 !frontend/public
+!frontend/public/**
 !frontend/src
+!frontend/src/**
 !frontend/package.json
