@@ -4,6 +4,7 @@
 !README.md
 !aria2-tmpl.conf
 !requirements.txt
-!frontend/**
 !frontend
-frontend/build
+!frontend/public
+!frontend/src
+!frontend/package.json
