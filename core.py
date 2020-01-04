@@ -20,12 +20,12 @@ def load_size(f):
         f['w'] = f['h'] = -1
         return False
 
-CLEAR_FILES_META = False
+# CLEAR_FILES_META = False
 
 class Work(object):
     def __init__(self, data):
-        if CLEAR_FILES_META:
-            data.pop('files')
+        # if CLEAR_FILES_META:
+        #     data.pop('files')
         self.data = data
         self.author = data['user']['name']
         self.author_id = data['user']['id']
@@ -90,21 +90,6 @@ class Work(object):
     def _open(self):
         return webbrowser.open(f'https://www.pixiv.net/artworks/{self.id}')
 
-class WorkFilter(object):
-    def __init__(self, func):
-        self.func = func
-    def __call__(self, pix):
-        return self.func(pix)
-    def __and__(self, rhs):
-        return WorkFilter(lambda pix: self.func(pix) and rhs.func(pix))
-    def __or__(self, rhs):
-        return WorkFilter(lambda pix: self.func(pix) or rhs.func(pix))
-    def __invert__(self):
-        return WorkFilter(lambda pix: not self.func(pix))
-
-def key_of_work(pix):
-    return -pix.id
-
 # remote db
 
 def login(force=False):
@@ -130,6 +115,9 @@ def greendam(quick=False):
 
 # local db
 
+def key_of_work(pix):
+    return -pix.id
+
 def fav_save(): # call after local db is modified
     fav.sort(key=key_of_work)
     if os.path.exists('fav.json'):
@@ -139,7 +127,7 @@ def fav_save(): # call after local db is modified
     fav_load()
 
 def fav_load():
-    global fav, CLEAR_FILES_META
+    global fav #, CLEAR_FILES_META
     try:
         with uopen('fav.json', 'r') as fp:
             fav = list(map(Work, json.load(fp, encoding='utf-8')))
@@ -155,7 +143,7 @@ def fav_load():
             cnt += 1
             print(cnt, pix.id)
 
-    CLEAR_FILES_META = False
+    # CLEAR_FILES_META = False
     if changed:
         fav_save()
     else:
@@ -170,7 +158,9 @@ def update(quick=False):
         ids = {pix.id for pix in fav}
     nfav = []
 
-    def fetch(restrict):
+    login()
+
+    for restrict in ('public', 'private'):
         @retry_def
         def bookmarks_handler(**kwargs):
             depth = kwargs.pop('depth')
@@ -189,18 +179,13 @@ def update(quick=False):
 
             for data in r.illusts:
                 if data['user']['id']:
-                    '''
-                    if data['type'] == 'ugoira':
-                        ucnt += 1
-                        continue
-                    '''
                     # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
                     if quick and data['id'] in ids:
                         print(f'{rcnt} {restrict} new in total, {icnt} invalid')
                         return
                     data = dict(data)
                     data['bookmark_restrict'] = restrict
-                    nfav.append(Work(data)) # no need to add the id to ids
+                    nfav.append(Work(data)) # no need to add id to ids
                     rcnt += 1
                 else:
                     icnt += 1
@@ -209,11 +194,6 @@ def update(quick=False):
                 break
             r = bookmarks_handler(**api.parse_qs(r.next_url), depth=0)
         print(f'{rcnt} {restrict} in total, {icnt} invalid')
-
-
-    login()
-    fetch('public')
-    fetch('private')
 
     files = {}
     for pix in fav:
@@ -342,7 +322,7 @@ def download():
                 break
         else:
             raise DownloadUncompletedError
-        # proc.wait()\
+        # proc.wait()
         print('All done!')
     except DownloadUncompletedError:
         print('Download not completed.')
@@ -351,8 +331,6 @@ def download():
         raise DownloadUncompletedError
     else:
         proc.terminate()
-
-# interface
 
 def build_fav():
     global nav, pix_files, all_tags, all_tags_list
@@ -383,45 +361,7 @@ def build_fav():
 
     all_tags_list = [x[0] for x in all_tags.most_common()]
 
-'''
-def _to_push(lim = 10): # Call download before this
-    if not (conf_local_source and os.path.exists(conf_local_source)):
-        print('Local source not found.')
-    # restore()
-    def wrapper(pix):
-        if lim >= 0 and pix.page_count > lim:
-            return False
-        return ckany(lambda img: img[0] not in ls_extra, pix.srcs)
-    print('Remember to transfer the db file.')
-    select(WorkFilter(wrapper))
-'''
-
-def wf_halt(*tgs):
-    return WorkFilter(lambda pix: ckall(lambda x: x in pix.spec, tgs))
-
-def wf_hayt(*tgs):
-    return WorkFilter(lambda pix: ckany(lambda x: x in pix.spec, tgs))
-
-def wf_hat(tag):
-    return WorkFilter(lambda pix: tag in pix.spec)
-
-wf_true = WorkFilter(lambda pix: True)
-wf_false = WorkFilter(lambda pix: False)
-wf_w = WorkFilter(lambda pix: pix.width >= pix.height)
-wf_nw = WorkFilter(lambda pix: pix.width <= pix.height)
-wf_h = wf_hayt('R-18')
-wf_hh = WorkFilter(lambda pix: 'R-18' in pix.spec and pix.page_count <= 1)
-wfs = {
-    '$h': wf_h,
-    '$$h': ~wf_h,
-    '$w': wf_w,
-    '$$w' : wf_nw,
-    '$hh': wf_hh,
-    '$$hh': ~wf_hh
-}
-
-# init
-
 api = AppPixivAPI()
 
+fav = []
 fav_load()

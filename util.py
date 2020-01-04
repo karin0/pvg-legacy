@@ -14,12 +14,6 @@ def to_filename(url):
 def to_ext(fn):
     return fn[fn.rfind('.') + 1:]
 
-def ckall(func, lst):
-    return all((func(x) for x in lst))
-
-def ckany(func, lst):
-    return any((func(x) for x in lst))
-
 def force_move(src, dest):
     if os.path.exists(dest):
         os.remove(dest)

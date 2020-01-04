@@ -1,9 +1,8 @@
 *
+frontend/build
 !*.py
 !.gitignore
 !README.md
 !aria2-tmpl.conf
 !requirements.txt
-!static
-!static/**
-
+!frontend/**

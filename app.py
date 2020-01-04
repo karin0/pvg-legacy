@@ -2,13 +2,20 @@ import os
 from flask import Flask, render_template, request, abort, send_file, url_for, jsonify
 from flask_cors import CORS
 
+from util import fixed_path
 from core import *
+from workfilters import *
 from locking import locked
 
+static_folder = 'frontend/build'
+template_folder = 'templates'
+
+static_folder = fixed_path(static_folder)
+template_folder = fixed_path(template_folder)
 app = Flask(__name__,
             static_url_path='',
-            static_folder='static',
-            template_folder='templates')
+            static_folder=static_folder,
+            template_folder=template_folder)
 
 app.config['CORS_HEADERS'] = 'Content-Type'
 
@@ -40,16 +47,18 @@ def get_tags():
     return jsonify({'tags': all_tags_list})
 '''
 
+error_path = static_folder + '/error.jpg'
+
 @app.route('/img/<int:pix_id>/<int:page_id>')
 def get_image(pix_id, page_id):
     r = nav.get(pix_id)
     if not r:
-        return send_file('static/error.jpg', mimetype='image/jpeg')
+        return send_file(error_path, mimetype='image/jpeg')
 
     try:
         url, mime = r[page_id]
     except IndexError:
-        return send_file('static/error.jpg', mimetype='image/jpeg')
+        return send_file(error_path, mimetype='image/jpeg')
 
     return send_file(url, mimetype=mime)
 
