@@ -25,6 +25,11 @@ def remove_noexcept(path):
     except FileNotFoundError:
         pass
 
+def list_copy(dest, src):
+    dest.clear()
+    for x in src:
+        dest.append(x)
+
 def retry(max_depth=5, catchee=(BaseException, )):
     def decorater(func):
         def wrapper(args, kwargs, depth):

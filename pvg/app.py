@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, abort, send_file, url_for, js
 from flask_cors import CORS
 
 from .util import *
-from .core import get_fav, nav, update, greendam, download, download_url, qudg
+from .core import fav, nav, update, greendam, download, download_url, qudg
 from .workfilters import wf_hat, wfs
 from .locking import locked, Lock
 from .env import conf_static_path, conf_pix_path, conf_thumb_path, conf_use_thumbnails
@@ -64,11 +64,11 @@ def get_image(pix_id, page_id):
         lock = Lock(fn)
         if not lock.lock():
             abort(500)
-
-        if download_url(meta.um.url, pix_path, fn):
-            meta.downloaded()
-
-        lock.unlock()
+        try:
+            if download_url(meta.um.url, pix_path, fn):
+                meta.downloaded()
+        finally:
+            lock.unlock()
 
     return send_file(pix_pre + fn, mimetype=mime)
 
@@ -88,12 +88,12 @@ def get_thumb(pix_id, page_id):
         lock = Lock('thu-' + fn)
         if not lock.lock():
             abort(500)
-        if not download_url(meta.umt.url, thumb_path, fn):
-            print('failed to download')
+        try:
+            if not download_url(meta.umt.url, thumb_path, fn):
+                print('failed to get thumb')
+                abort(500)
+        finally:
             lock.unlock()
-            abort(500)
-
-        lock.unlock()
 
     return send_file(path, mimetype=mime)
 
@@ -112,7 +112,6 @@ def select():
     filts = [~parse_wf(s[1:]) if s.startswith('!') else parse_wf(s)
             for s in req]
 
-    fav = get_fav()
     res = []
     for pix in fav:
         if all(map(lambda f: f(pix), filts)):

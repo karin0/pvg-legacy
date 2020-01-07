@@ -17,7 +17,7 @@ def load_size(fn):
     except:
         return -1, -1
 
-CLEAR_FILES_META = False
+# CLEAR_FILES_META = False
 
 class URLMeta(object):
     def __init__(self, url):
@@ -98,7 +98,7 @@ class Illust(object):
                         ns.append(y)
                         ret = True
             if ret:
-                self.sizes = ns
+                self.data['sizes'] = self.sizes = ns
                 return True
             return False
 
@@ -149,7 +149,7 @@ def fav_save(): # call after local db is modified
         json.dump([pix.data for pix in fav], f, separators=(',', ':'))
 
 def fav_hook():
-    global CLEAR_FILES_META
+    # global CLEAR_FILES_META
     print('Running local db hook..')
     fav.sort(key=key_of_illust)
     cnt = 0
@@ -158,20 +158,19 @@ def fav_hook():
             cnt += 1
             print(cnt, pix.id)
 
-    CLEAR_FILES_META = False
+    # CLEAR_FILES_META = False
     if cnt:
         fav_save()
     build_fav()
     print('Db hook done')
 
 def fav_load():
-    global fav
     print('Loading local db..')
     try:
         with uopen('fav.json', 'r') as fp:
-            fav = list(map(Illust, json.load(fp, encoding='utf-8')))
+            list_copy(fav, list(map(Illust, json.load(fp, encoding='utf-8'))))
     except Exception as e:
-        fav = []
+        fav.clear()
         print('Cannot load from local fav:', type(e).__name__, e)
     fav_hook()
 
@@ -204,12 +203,8 @@ def build_fav():
 
 # higher-level db manage
 
-def get_fav():
-    return fav
-
 @use_lock
 def update(quick=False):
-    global fav
     if quick:
         ids = {pix.id for pix in fav}
     nfav = []
@@ -269,7 +264,7 @@ def update(quick=False):
         if pix.id not in ids:
             ids.add(pix.id)
             nfav.append(pix)
-    fav = nfav
+    list_copy(fav, nfav)
     fav_hook()
 
 # file operation
@@ -290,8 +285,6 @@ def clean_aria2():
 ls_extra = dict()
 @use_lock
 def download():
-    print('len fav = ', len(fav), id(fav))
-
     clean_aria2()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
