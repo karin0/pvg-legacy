@@ -1,11 +1,14 @@
 *
-**
 !*.py
 !.gitignore
 !README.md
 !aria2-tmpl.conf
 !requirements.txt
+!frontend
+!frontend/public
 !frontend/public/**
+!frontend/src
 !frontend/src/**
 !frontend/package.json
+!pvg
 !pvg/*.py
