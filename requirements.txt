@@ -2,4 +2,3 @@ pixivpy
 Pillow
 Flask
 Flask-Cors
-gunicorn

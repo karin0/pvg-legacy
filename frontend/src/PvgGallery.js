@@ -28,15 +28,24 @@ function ImageCaption(props) {
     return (
         <Typography>
             <div className={classes.md}>
-                <Link href={illust_url} className={classes.mr}>{img.title}</Link>
-                <Link href={author_url}>{img.author}</Link>
+                <Link
+                    href={illust_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={classes.mr}
+                >{img.title}</Link>
+                <Link
+                    href={author_url}
+                    target="_blank"
+                    rel="noreferrer"
+                >{img.author}</Link>
             </div>
             {img.tags.map(tag =>
                 <Chip
                     className={classes.mr}
                     label={tag}
                     onClick={ () => {
-                        props.update_tags(tag, img.nav);
+                        props.update_tags(tag, img.ori);
                     }}
                 />
             )}
@@ -110,17 +119,16 @@ export default function PvgGallery(props) {
     let pages = [], modal_pages = [], page = [], modal_page = [], offset = 0;
 
     for (const img of props.images) {
-        if (img.nav === props.locating_id)
+        if (img.ori === props.locating_id)
             offset = pages.length;
 
-        const src = host + 'img/' + img.nav;
         page.push({
-            src,
+            src: host + img.thu,
             width: img.w,
             height: img.h
         });
         modal_page.push({
-            source: src,
+            source: host + img.ori,
             caption: <ImageCaption img={img} update_tags={props.update_tags} />
         });
 

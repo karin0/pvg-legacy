@@ -1,7 +1,7 @@
 import os, shutil
 from functools import partial
 
-from error import MaxTryLimitExceedError
+from .error import MaxTryLimitExceedError
 
 uopen = partial(open, encoding='utf-8')
 
@@ -43,3 +43,15 @@ def retry(max_depth=5, catchee=(BaseException, )):
     return decorater
 
 retry_def = retry()
+
+mimes = {
+    'bmp': 'image/bmp',
+    'jpg': 'image/jpeg',
+    'png': 'image/png',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff',
+    'gif': 'image/gif',
+    'svg': 'image/svg+xml',
+    'webp': 'image/webp',
+    'ico': 'image/vnd.microsoft.icon'
+}

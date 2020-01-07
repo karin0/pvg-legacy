@@ -11,3 +11,5 @@
 !frontend/src
 !frontend/src/**
 !frontend/package.json
+!pvg
+!pvg/*.py

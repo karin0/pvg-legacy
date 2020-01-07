@@ -1,7 +1,7 @@
 import os
 
-from env import conf_tmp_path
-from util import uopen
+from .env import conf_tmp_path
+from .util import uopen, remove_noexcept
 
 class Lock(object):
     def __init__(self, name):
@@ -16,15 +16,15 @@ class Lock(object):
         return True
 
     def unlock(self):
-        os.remove(self.path)
+        remove_noexcept(self.path)
 
 class _Locked(object):
     pass
 
 locked = _Locked()
 
-def use_lock(f):
-    lock = Lock(f.__module__ + '-' + f.__name__)
+def use_lock(f, name=None):
+    lock = Lock(name if name else (f.__module__ + '-' + f.__name__))
     def wrapper(*args, **kwargs):
         if not lock.lock():
             return locked

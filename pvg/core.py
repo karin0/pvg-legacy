@@ -1,32 +1,49 @@
-import os, json, shutil, sys, subprocess, webbrowser
+import os, json, shutil, sys, subprocess
 from time import sleep
-from collections import Counter
 
 from pixivpy3 import AppPixivAPI
 from PIL import Image
 
-from util import *
-from error import *
-from env import *
-from locking import use_lock
+from .util import *
+from .error import *
+from .env import *
+from .locking import use_lock
 
-def load_size(f):
-    local_url = conf_pix_path + '/' + f['fn']
+def load_size(fn):
+    local_url = conf_pix_path + '/' + fn
     try:
-        im = Image.open(local_url)
-        f['w'], f['h'] = im.size
-        return True
+        with Image.open(local_url) as im:
+            return im.size
     except:
-        f['w'] = f['h'] = -1
-        return False
+        return -1, -1
 
-# CLEAR_FILES_META = False
+CLEAR_FILES_META = False
 
-class Work(object):
+class URLMeta(object):
+    def __init__(self, url):
+        self.url = url
+        self.fn = to_filename(url)
+
+class IllustMeta(object):
+    def __init__(self, pix, i, exists):
+        self.pix = pix
+        self.ind = i
+        self.um = pix.ums[i]
+        self.umt = pix.umst[i]
+        self.size = pix.sizes[i]
+        self.exists = exists
+    
+    def downloaded(self):
+        self.exists = True
+        if self.size[0] < 0:
+            self.size = self.pix.sizes[self.ind] = load_size(self.um.fn)
+    
+class Illust(object):
     def __init__(self, data):
         # if CLEAR_FILES_META:
         #     data.pop('files')
         self.data = data
+        self.title = data['title']
         self.author = data['user']['name']
         self.author_id = data['user']['id']
         self.tags = [x['name'] for x in data['tags']]
@@ -43,42 +60,49 @@ class Work(object):
             'likes': self.likes,
             'tags': self.tags
         }
-
-    def gen_files(self):
+        
         if self.type == 'ugoira':
-            self.files = self.data['files'] = []
+            self.ums = self.umst = []
+        elif self.page_count == 1:
+            self.ums = [URLMeta(data['meta_single_page']['original_image_url'])]
+            self.umst = [URLMeta(data['image_urls']['square_medium'])]
+        else:
+            self.ums = []
+            self.umst = []
+            for x in self.data['meta_pages']:
+                xi = x['image_urls']
+                self.ums.append(URLMeta(xi['original']))
+                self.umst.append(URLMeta(xi['square_medium']))
+
+    def gen_sizes(self):
+        if self.type == 'ugoira':
+            self.sizes = []
+            return False
+        
+        if self.page_count == 1:
+            self.sizes = [(self.width, self.height)]
+            return False
+        
+        self.sizes = self.data.get('sizes')
+
+        if self.sizes and len(self.sizes) == self.page_count:
+            self.sizes = list(map(tuple, self.sizes))
+            ret = False
+            ns = []
+            for i, x in enumerate(self.sizes):
+                if x[0] >= 0:
+                    ns.append(x)
+                else:
+                    y = load_size(self.ums[i].fn)
+                    if y[0] >= 0:
+                        ns.append(y)
+                        ret = True
+            if ret:
+                self.sizes = ns
+                return True
             return False
 
-        self.files = self.data.get('files')
-        if self.page_count == 1:
-            if self.files and len(self.files) == 1:
-                return False # No action
-
-            url = self.data['meta_single_page']['original_image_url']
-            self.files = self.data['files'] = [{
-                'fn': to_filename(url),
-                'url': url,
-                'w': self.width,
-                'h': self.height
-            }]
-        else:
-            if self.files and len(self.files) == self.page_count:
-                ret = False
-                for x in self.files:
-                    if (x['w'] < 0 or x['h'] < 0) and load_size(x):
-                        ret = True
-                return ret
-
-            self.files = self.data['files'] = []
-            for x in self.data['meta_pages']:
-                url = x['image_urls']['original']
-                f = {
-                    'fn': to_filename(url),
-                    'url': url
-                }
-                load_size(f)
-                self.files.append(f)
-
+        self.sizes = self.data['sizes'] = [load_size(meta.fn) for meta in self.ums]
         return True
 
     def __repr__(self):
@@ -87,21 +111,21 @@ class Work(object):
         return str(self.intro)
     def __getattr__(self, item):
         return self.data[item]
-    def _open(self):
-        return webbrowser.open(f'https://www.pixiv.net/artworks/{self.id}')
 
 # remote db
 
+api = AppPixivAPI()
+login_handler = use_lock(retry_def(api.login), name='loginer')
 def login(force=False):
     if force or not api.user_id:
         print('Logining with', conf_username, conf_passwd)
-        retry_def(api.login)(conf_username, conf_passwd)
+        login_handler(conf_username, conf_passwd)
         print('Logined, uid =', api.user_id)
 
 @use_lock
-def greendam(quick=False):
+def greendam():
     login()
-    update(quick)
+    # update(quick)
     # que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
     add_handler = retry_def(api.illust_bookmark_add)
     que = [pix for pix in fav if 'R-18' in pix.tags and pix.bookmark_restrict == 'public']
@@ -109,47 +133,79 @@ def greendam(quick=False):
     for i, pix in enumerate(reversed(que), 1):
         print(f'{i}/{tot}: {pix.title} ({pix.id})')
         add_handler(pix.id, restrict='private')
-        pix.data['bookmark_restrict'] = 'private' # Be careful when assigning to "attributes" of Works.. maybe we can remove the "data" field
+        pix.data['bookmark_restrict'] = 'private' # not the attr
     fav_save()
-    # update()
 
-# local db
+# local db handler, functions calling which should use locks
 
-def key_of_work(pix):
+def key_of_illust(pix):
     return -pix.id
 
 def fav_save(): # call after local db is modified
-    fav.sort(key=key_of_work)
+    print('Saving to local db..')
     if os.path.exists('fav.json'):
         force_move('fav.json', f'{conf_tmp_path}/fav-old.json')
     with uopen('fav.json', 'w') as f:
         json.dump([pix.data for pix in fav], f, separators=(',', ':'))
-    fav_load()
 
-def fav_load():
-    global fav #, CLEAR_FILES_META
-    try:
-        with uopen('fav.json', 'r') as fp:
-            fav = list(map(Work, json.load(fp, encoding='utf-8')))
-    except Exception as e:
-        fav = []
-        print('Cannot load from local fav:', type(e).__name__, e)
-
+def fav_hook():
+    global CLEAR_FILES_META
+    print('Running local db hook..')
+    fav.sort(key=key_of_illust)
     cnt = 0
-    changed = False
     for pix in fav:
-        if pix.gen_files():
-            changed = True
+        if pix.gen_sizes():
             cnt += 1
             print(cnt, pix.id)
 
-    # CLEAR_FILES_META = False
-    if changed:
+    CLEAR_FILES_META = False
+    if cnt:
         fav_save()
-    else:
-        build_fav()
+    build_fav()
+    print('Db hook done')
 
-    # fav.sort(key=lambda pix: -pix.likes)
+def fav_load():
+    global fav
+    print('Loading local db..')
+    try:
+        with uopen('fav.json', 'r') as fp:
+            fav = list(map(Illust, json.load(fp, encoding='utf-8')))
+    except Exception as e:
+        fav = []
+        print('Cannot load from local fav:', type(e).__name__, e)
+    fav_hook()
+
+def build_fav():
+    print('Building fav..')
+    nav.clear()
+    pix_files.clear()
+
+    for pix in fav:
+        if conf_max_page_count < 0 or pix.page_count <= conf_max_page_count:
+            is_first = True
+            nav_val = []
+            pix.metas = []
+            for i, meta in enumerate(pix.ums):
+                fn = meta.fn
+                furl = meta.url
+                pix_files[fn.lower()] = (furl, pix)
+
+                if is_first:
+                    is_first = False
+                    if_exists = os.path.exists(conf_pix_path + '/' + fn)
+                else:
+                    if_exists = pix.sizes[i][0] >= 0
+                
+                imeta = IllustMeta(pix, i, if_exists)
+                nav_val.append([imeta, mimes[to_ext(fn)]])
+                pix.metas.append(imeta)
+
+            nav[pix.id] = nav_val
+
+# higher-level db manage
+
+def get_fav():
+    return fav
 
 @use_lock
 def update(quick=False):
@@ -160,7 +216,7 @@ def update(quick=False):
 
     login()
 
-    for restrict in ('public', 'private'):
+    def fetch(restrict):
         @retry_def
         def bookmarks_handler(**kwargs):
             depth = kwargs.pop('depth')
@@ -185,7 +241,7 @@ def update(quick=False):
                         return
                     data = dict(data)
                     data['bookmark_restrict'] = restrict
-                    nfav.append(Work(data)) # no need to add id to ids
+                    nfav.append(Illust(data)) # no need to add id to ids
                     rcnt += 1
                 else:
                     icnt += 1
@@ -195,45 +251,34 @@ def update(quick=False):
             r = bookmarks_handler(**api.parse_qs(r.next_url), depth=0)
         print(f'{rcnt} {restrict} in total, {icnt} invalid')
 
-    files = {}
+    for restrict in ('public', 'private'):
+        fetch(restrict)
+
+    sizes = {}
     for pix in fav:
-        fs = pix.data.get('files')
+        fs = pix.data.get('sizes')
         if fs:
-            files[pix.id] = fs
+            sizes[pix.id] = fs
     ids = set()
     for pix in nfav:
         ids.add(pix.id)
-        fs = files.get(pix.id)
+        fs = sizes.get(pix.id)
         if fs:
-            pix.files = pix.data['files'] = fs
+            pix.sizes = pix.data['sizes'] = fs
     for pix in fav:
         if pix.id not in ids:
             ids.add(pix.id)
             nfav.append(pix)
     fav = nfav
-
-    fav_save()
+    fav_hook()
 
 # file operation
 
-def _move_unused_files():
-    clean_aria2()
-    print('Cleaning unused files..')
-    cnt = 0
-    for path in conf_pix_path:
-        for fn in os.listdir(path):
-            fnl = fn.lower()
-            if fnl not in pix_files and to_ext(fnl) in mimes:
-                shutil.move(f'{path}/{fn}', conf_unused_path)
-                cnt += 1
-    print(f'Cleaned {cnt} files.')
-
 def gen_aria2_conf(**kwargs):
-    r = aria2_conf_tmpl
-    for k, v in kwargs.items():
-        if v:
-            r += f'{k.replace("_", "-")}={v}\n'
-    return r
+    return ''.join(
+        [aria2_conf_tmpl] +
+        [f'{k.replace("_", "-")}={v}\n' for k, v in kwargs.items() if v]
+    )
 
 def clean_aria2():
     for fn in os.listdir(conf_pix_path):
@@ -245,41 +290,13 @@ def clean_aria2():
 ls_extra = dict()
 @use_lock
 def download():
+    print('len fav = ', len(fav), id(fav))
+
     clean_aria2()
     print('Counting undownloaded files..')
     ls_pix = set(os.listdir(conf_pix_path))
-    ls_unused = set(os.listdir(conf_unused_path))
 
-    if not ls_extra and conf_local_source and os.path.exists(conf_local_source):
-        print('Local source is avaliable.')
-        for x in (conf_pix_path, conf_unused_path):
-            try:
-                print('Listing ', x)
-                ls = os.listdir(x)
-                for fn in ls:
-                    ls_extra[fn] = x + '/' + fn
-                print(f'Found {len(ls)} files from {x}.')
-            except FileNotFoundError:
-                print(f'{x} does not exist local source!')
-
-    que = []
-    cnt = 0
-    extcnt = 0
-    for fn, (url, pix) in pix_files.items():
-        if fn not in ls_pix:
-            if fn in ls_unused:
-                shutil.move(f'{conf_unused_path}/{fn}', conf_pix_path)
-                cnt += 1
-            elif fn in ls_extra:
-                print(f'Found {fn} from local source!')
-                shutil.copy(ls_extra[fn], conf_pix_path)
-                extcnt += 1
-            else:
-                que.append((fn, url, pix))
-    if cnt:
-        print(f'Restored {cnt} files from unused path.')
-    if extcnt:
-        print(f'Copied {extcnt} files from local source.')
+    que = [(fn, url, pix) for fn, (url, pix) in pix_files.items() if fn not in ls_pix]
     if not que:
         print('All files are downloaded.')
         return
@@ -309,8 +326,8 @@ def download():
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env=en
-        ) # (done) force proxychains now
-        print('Aria2c started.')
+        )
+        print('aria2c started.')
         cnt = 0
         for line in proc.stdout:
             s = line.decode().strip()
@@ -325,43 +342,31 @@ def download():
         # proc.wait()
         print('All done!')
     except DownloadUncompletedError:
-        print('Download not completed.')
+        print('Download not completed!')
         proc.terminate()
         clean_aria2()
-        raise DownloadUncompletedError
     else:
         proc.terminate()
+    finally:
+        fav_hook()
 
-def build_fav():
-    global nav, pix_files, all_tags, all_tags_list
-    nav = {}
-    pix_files = {}
-    all_tags = Counter()
-    for pix in fav:
-        if conf_max_page_count < 0 or pix.page_count <= conf_max_page_count:
-            is_first = True
-            nav_val = []
-            for f in pix.files:
-                fn = f['fn']
-                all_tags.update(pix.tags)
-                pix_files[fn.lower()] = (f['url'], pix)
-                local_url = conf_pix_path + '/' + fn
+@use_lock
+def qudg():
+    update(True)
+    download()
+    greendam()
 
-                if is_first:
-                    is_first = False
-                    if_exists = os.path.exists(local_url)
-                else:
-                    if_exists = f['w'] >= 0
-
-                if if_exists:
-                    nav_val.append((local_url, mimes[to_ext(fn)]))
-                else:
-                    nav_val.append(None)
-            nav[pix.id] = nav_val
-
-    all_tags_list = [x[0] for x in all_tags.most_common()]
-
-api = AppPixivAPI()
+def download_url(url, path, name):
+    print('downloading', url, path, name)
+    login()
+    try:
+        return api.download(url, path=path, name=name)
+    except Exception as e:
+        print(type(e).__name__, e)
+        return False
 
 fav = []
+nav = {}
+pix_files = {}
+
 fav_load()
