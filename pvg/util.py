@@ -30,7 +30,7 @@ def list_copy(dest, src):
     for x in src:
         dest.append(x)
 
-def retry(max_depth=5, catchee=(BaseException, )):
+def retry(max_depth=3, catchee=(BaseException, )):
     def decorater(func):
         def wrapper(args, kwargs, depth):
             if depth >= max_depth:
@@ -59,4 +59,9 @@ mimes = {
     'svg': 'image/svg+xml',
     'webp': 'image/webp',
     'ico': 'image/vnd.microsoft.icon'
+}
+
+pixiv_headers = {
+    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.117 Safari/537.36',
+    'referer': 'https://app-api.pixiv.net/'
 }

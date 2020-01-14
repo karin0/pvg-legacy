@@ -13,7 +13,7 @@ function renderRow(props) {
         style: {
             ...style,
             top: style.top + LISTBOX_PADDING,
-        },
+        }
     });
 }
 
@@ -24,7 +24,6 @@ const OuterElementType = React.forwardRef((props, ref) => {
     return <div ref={ref} {...props} {...outerProps} />;
 });
 
-// Adapter for react-window
 const ListboxComponent = React.forwardRef(function ListboxComponent(props, ref) {
     const { children, ...other } = props;
     const itemData = React.Children.toArray(children);
@@ -33,17 +32,14 @@ const ListboxComponent = React.forwardRef(function ListboxComponent(props, ref) 
     const itemSize = smUp ? 36 : 48;
     
     const getChildSize = child => {
-        if (React.isValidElement(child) && child.type === ListSubheader) {
+        if (React.isValidElement(child) && child.type === ListSubheader)
             return 48;
-        }
-        
         return itemSize;
     };
     
     const getHeight = () => {
-        if (itemCount > 8) {
+        if (itemCount > 8)
             return 8 * itemSize;
-        }
         return itemData.map(getChildSize).reduce((a, b) => a + b, 0);
     };
     

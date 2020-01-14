@@ -3,19 +3,12 @@ from time import sleep
 
 from pixivpy3 import AppPixivAPI
 from PIL import Image
+from requests import get as req_get
 
 from .util import *
 from .error import *
 from .env import *
 from .locking import use_lock
-
-def load_size(fn):
-    local_url = conf_pix_path + '/' + fn
-    try:
-        with Image.open(local_url) as im:
-            return im.size
-    except:
-        return -1, -1
 
 # CLEAR_FILES_META = False
 
@@ -23,6 +16,13 @@ class URLMeta(object):
     def __init__(self, url):
         self.url = url
         self.fn = to_filename(url)
+
+    def load_size(self):
+        try:
+            with Image.open(conf_pix_path + '/' + self.fn) as im:
+                return im.size
+        except:
+            return -1, -1
 
 class IllustMeta(object):
     def __init__(self, pix, i, exists):
@@ -36,7 +36,7 @@ class IllustMeta(object):
     def downloaded(self):
         self.exists = True
         if self.size[0] < 0:
-            self.size = self.pix.sizes[self.ind] = load_size(self.um.fn)
+            self.size = self.pix.sizes[self.ind] = self.um.load_size()
     
 class Illust(object):
     def __init__(self, data):
@@ -61,7 +61,7 @@ class Illust(object):
             'tags': self.tags
         }
         
-        if self.type == 'ugoira':
+        if self.type == 'ugoira' or self.data.get('deleted'):
             self.ums = self.umst = []
         elif self.page_count == 1:
             self.ums = [URLMeta(data['meta_single_page']['original_image_url'])]
@@ -88,12 +88,13 @@ class Illust(object):
         if self.sizes and len(self.sizes) == self.page_count:
             self.sizes = list(map(tuple, self.sizes))
             ret = False
-            ns = []
-            for i, x in enumerate(self.sizes):
+            ns = [(self.width, self.height)]
+            for i in range(1, self.page_count):
+                x = self.sizes[i]
                 if x[0] >= 0:
                     ns.append(x)
                 else:
-                    y = load_size(self.ums[i].fn)
+                    y = self.ums[i].load_size()
                     if y[0] >= 0:
                         ns.append(y)
                         ret = True
@@ -101,9 +102,16 @@ class Illust(object):
                 self.data['sizes'] = self.sizes = ns
                 return True
             return False
-
-        self.sizes = self.data['sizes'] = [load_size(meta.fn) for meta in self.ums]
+        
+        ns = [(self.width, self.height)]
+        for i in range(1, self.page_count):
+            ns.append(self.ums[i].load_size())
+        self.sizes = self.data['sizes'] = ns
         return True
+    
+    def delete(self):
+        self.data['deleted'] = True
+        self.ums = self.umst = self.sizes = self.data['sizes'] = []
 
     def __repr__(self):
         return repr(self.intro)
@@ -120,12 +128,13 @@ def login(force=False):
     if force or not api.user_id:
         print('Logining with', conf_username, conf_passwd)
         login_handler(conf_username, conf_passwd)
+        if not api.user_id:
+            raise PvgError('failed to login')
         print('Logined, uid =', api.user_id)
 
 @use_lock
 def greendam():
     login()
-    # update(quick)
     # que = list(reversed([x for x in fav if 'R-18' in x.tags and x.bookmark_restrict == 'public' and x.id not in _conf_nonh_id_except]))
     add_handler = retry_def(api.illust_bookmark_add)
     que = [pix for pix in fav if 'R-18' in pix.tags and pix.bookmark_restrict == 'public']
@@ -141,18 +150,19 @@ def greendam():
 def key_of_illust(pix):
     return -pix.id
 
-def fav_save(): # call after local db is modified
+def fav_save():
     print('Saving to local db..')
     if os.path.exists('fav.json'):
         force_move('fav.json', f'{conf_tmp_path}/fav-old.json')
     with uopen('fav.json', 'w') as f:
         json.dump([pix.data for pix in fav], f, separators=(',', ':'))
+    print('Saved')
 
-def fav_hook():
+def fav_hook(force_save=False):
     # global CLEAR_FILES_META
     print('Running local db hook..')
     fav.sort(key=key_of_illust)
-    cnt = 0
+    cnt = 1 if force_save else 0
     for pix in fav:
         if pix.gen_sizes():
             cnt += 1
@@ -228,20 +238,20 @@ def update(quick=False):
             cnt += 1
             print(f'{len(r.illusts)} on {restrict} page #{cnt}')
 
+            quick_ok = True
             for data in r.illusts:
                 if data['user']['id']:
                     # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
-                    if quick and data['id'] in ids:
-                        print(f'{rcnt} {restrict} new in total, {icnt} invalid')
-                        return
+                    if quick and data['id'] not in ids:
+                        quick_ok = False
                     data = dict(data)
                     data['bookmark_restrict'] = restrict
                     nfav.append(Illust(data)) # no need to add id to ids
                     rcnt += 1
                 else:
                     icnt += 1
-
-            if r.next_url is None:
+            
+            if (quick and quick_ok) or r.next_url is None:
                 break
             r = bookmarks_handler(**api.parse_qs(r.next_url), depth=0)
         print(f'{rcnt} {restrict} in total, {icnt} invalid')
@@ -265,7 +275,7 @@ def update(quick=False):
             ids.add(pix.id)
             nfav.append(pix)
     list_copy(fav, nfav)
-    fav_hook()
+    fav_hook(True)
 
 # file operation
 
@@ -282,14 +292,16 @@ def clean_aria2():
             os.remove(f'{conf_pix_path}/{fn}')
             remove_noexcept(f'{conf_pix_path}/{fn[:-6]}')
 
-ls_extra = dict()
+def get_download_queue():
+    print('Counting nonexistent files..')
+    ls_pix = set(os.listdir(conf_pix_path))
+    return [(fn, url, pix) for fn, (url, pix) in pix_files.items() if fn not in ls_pix]
+
+illust_detail_handler = retry_def(api.illust_detail)
 @use_lock
 def download():
     clean_aria2()
-    print('Counting undownloaded files..')
-    ls_pix = set(os.listdir(conf_pix_path))
-
-    que = [(fn, url, pix) for fn, (url, pix) in pix_files.items() if fn not in ls_pix]
+    que = get_download_queue()
     if not que:
         print('All files are downloaded.')
         return
@@ -305,6 +317,8 @@ def download():
 
     with uopen(aria2_conf_path, 'w') as fp:
         fp.write(gen_aria2_conf(
+            user_agent=pixiv_headers['user-agent'],
+            referer=pixiv_headers['referer'],
             dir=os.path.abspath(conf_pix_path),
             input_file=os.path.abspath(urls_path),
             file_allocation=conf_aria2_file_allocation,
@@ -322,18 +336,71 @@ def download():
         )
         print('aria2c started.')
         cnt = 0
+        cnt_404 = 0
+        aborted = False
         for line in proc.stdout:
             s = line.decode().strip()
-            # print(s)
-            if 'Download complete' in s or '下载已完成' in s:
+            sl = s.lower()
+            if 'download complete' in sl or '下载已完成' in s:
                 cnt += 1
                 print(f'{cnt}/{tot}', s)
+            elif 'download aborted' in sl:
+                aborted = True
+                cnt += 1
+                print(f'{cnt}/{tot}', s)
+            if 'resource not found' in sl:
+                cnt_404 += 1
+                print('Got 404: ', cnt_404, s)
+            elif 'error' in sl:
+                print(s)
             if cnt >= tot:
                 break
         else:
             raise DownloadUncompletedError
         # proc.wait()
         print('All done!')
+        if aborted:
+            que = get_download_queue()
+            lost_ids = set()
+            lost_pixs = []
+            if len(que) == cnt_404:
+                for fn, url, pix in que:
+                    print('Retrieving all', pix.id, pix.title)
+                    if pix.id not in lost_ids:
+                        lost_ids.add(pix.id)
+                        lost_pixs.append(pix)
+            else:
+                for fn, url, pix in que:
+                    if pix.id not in lost_ids:
+                        print('Fetching', fn, url, '..')
+                        r = req_get(url, headers=pixiv_headers)
+                        if r.ok:
+                            print('OK', r.status_code, 'Writing..')
+                            with open(conf_pix_path + '/' + fn, 'wb') as fp:
+                                fp.write(r.content)
+                            print('Done')
+                        else:
+                            print('Error', r.status_code)
+                            if r.status_code == 404:
+                                print('Retrieving', pix.id, pix.title)
+                                lost_ids.add(pix.id)
+                                lost_pixs.append(pix)
+            if lost_pixs:
+                login()
+                for pix in lost_pixs:
+                    print('Fetching', pix.id)
+                    r = illust_detail_handler(pix.id)
+                    if 'error' in r:
+                        print(r)
+                        pix.delete()
+                    else:
+                        r = r.get('illust')
+                        if r and r.is_bookmarked:
+                            print('ok')
+                            fav.append(Illust(dict(r)))
+                        else:
+                            pix.delete()
+
     except DownloadUncompletedError:
         print('Download not completed!')
         proc.terminate()
@@ -341,7 +408,7 @@ def download():
     else:
         proc.terminate()
     finally:
-        fav_hook()
+        fav_hook(True)
 
 @use_lock
 def qudg():
@@ -351,7 +418,10 @@ def qudg():
 
 def download_url(url, path, name):
     print('downloading', url, path, name)
-    login()
+    try:
+        login()
+    except Exception as e:
+        print('Exception in logging:', type(e).__name__, e)
     try:
         return api.download(url, path=path, name=name)
     except Exception as e:

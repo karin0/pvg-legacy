@@ -60,10 +60,10 @@ def get_image(pix_id, page_id):
 
     meta, mime = r
     fn = meta.um.fn
-    if not meta.exists:
+    if not meta.exists and not os.path.exists(pix_pre + fn):
         lock = Lock(fn)
         if not lock.lock():
-            abort(500)
+            abort(404)
         try:
             if download_url(meta.um.url, pix_path, fn):
                 meta.downloaded()
@@ -83,11 +83,10 @@ def get_thumb(pix_id, page_id):
     fn = meta.umt.fn
     mime = mimes[to_ext(fn)]
     path = thumb_pre + fn
-
     if not os.path.exists(path):
         lock = Lock('thu-' + fn)
         if not lock.lock():
-            abort(500)
+            abort(404)
         try:
             if not download_url(meta.umt.url, thumb_path, fn):
                 print('failed to get thumb')

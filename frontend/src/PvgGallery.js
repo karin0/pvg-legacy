@@ -1,11 +1,13 @@
-import React, { useState, Component } from 'react';
+import React, { useState } from 'react';
 
-import { Link, Chip, Grid, Typography } from '@material-ui/core';
+import { Link, Chip, Grid, Typography, Drawer, Box, TextField } from '@material-ui/core';
 import { makeStyles } from '@material-ui/core/styles';
 
 import Pagination from "material-ui-flat-pagination";
 import Carousel, { Modal, ModalGateway } from 'react-images';
 import Gallery from 'react-photo-gallery';
+
+import { animateScroll } from 'react-scroll'
 
 import { host, IMAGES_PER_PAGE } from './env.js';
 
@@ -45,6 +47,7 @@ function ImageCaption(props) {
                     className={classes.mr}
                     label={tag}
                     onClick={ () => {
+                        props.close_modal();
                         props.update_tags(tag, img.ori);
                     }}
                 />
@@ -56,15 +59,20 @@ function ImageCaption(props) {
 function GalleryView(props) {
     const [index, set_index] = useState(-1);
 
+    const close_modal = () => set_index(-1);
+
     return (
         <>
             <Gallery photos={props.images} onClick={ (e, {index}) => set_index(index) } />
             <ModalGateway>
                 {index >= 0 ? (
-                <Modal onClose={ () => set_index(-1) }>
+                <Modal onClose={close_modal}>
                     <Carousel
                         currentIndex={index}
-                        views={props.views}
+                        views={props.views.map(view => ({
+                            source: host + view.img.ori,
+                            caption: <ImageCaption img={view.img} update_tags={view.update_tags} close_modal={close_modal} />
+                        }))}
                     />
                 </Modal>
                 ) : null}
@@ -73,47 +81,87 @@ function GalleryView(props) {
     );
 }
 
-class GalleryPagination extends Component {
-    state = {
-        offset: this.props.default_offset,
-    };
+function PaginationInput(props) {
+    const [val, set_val] = useState(1);
 
-    set_offset = off => {
-        this.setState({
-            offset: off
-        });
-    };
+    return (
+        <Box m={-0.3} ml={3}>
+            <TextField
+                style={{
+                    width: 80
+                }}
+                inputProps={{
+                    style: {
+                        fontSize: '90%'
+                    }
+                }}
+                margin="dense"
+                size="small"
+                type="number"
+                onChange={ e => {
+                    const nv = e.target.value;
+                    if (nv === '')
+                        set_val(0);
+                    else {
+                        const x = parseInt(nv, 10);
+                        if (x >= 1 && x <= props.tot)
+                            set_val(x);
+                        else
+                            e.target.value = val;
+                    }
+                }}
+                onKeyPress={ e => {
+                    if (e.key === 'Enter' && val > 0) 
+                        props.switch(val - 1);
+                }}
+            />
+        </Box>
+    );
+}
 
-    render() {
-        const off = this.state.offset, pages = this.props.pages, tot = pages.length;
+function GalleryPagination(props) {
+    const [off, set_offset] = useState(props.default_offset);
 
-        let images, views;
-        if (off < tot) {
-            images = pages[off];
-            views = this.props.modal_pages[off];
-        } else
-            images = views = [];
+    const tot = props.pages.length;
+    let images, views;
+    if (off < tot) {
+        images = props.pages[off];
+        views = props.modal_pages[off];
+    } else
+        images = views = [];
 
-        return (
-            <>
+    return (
+        <>
+            <Box m={3}>
+                <GalleryView
+                    images={images}
+                    views={views}
+                />
+            </Box>
+            <Drawer
+                variant="permanent"
+                anchor="bottom"
+                elevation={100}
+            >
                 <Grid container justify="center">
                     <Pagination
                         limit={1}
                         offset={off}
                         total={tot}
-                        onClick={(e, offset) => this.set_offset(offset)}
-                        otherPageColor="default"
+                        onClick={(e, offset) => {
+                            set_offset(offset);
+                            animateScroll.scrollToTop({duration: 200});
+                        }}
+                        otherPageColor="primary"
+                        innerButtonCount={3}
+                        outerButtonCount={3}
                     />
+                    <PaginationInput switch={set_offset} tot={tot} />
                 </Grid>
-                <GalleryView
-                    images={images}
-                    views={views}
-                />
-            </>
-        );
-    }
+            </Drawer>
+        </>
+    );
 }
-
 
 export default function PvgGallery(props) {
     let pages = [], modal_pages = [], page = [], modal_page = [], offset = 0;
@@ -128,8 +176,8 @@ export default function PvgGallery(props) {
             height: img.h
         });
         modal_page.push({
-            source: host + img.ori,
-            caption: <ImageCaption img={img} update_tags={props.update_tags} />
+            img,
+            update_tags: props.update_tags
         });
 
         if (page.length >= IMAGES_PER_PAGE) {
@@ -149,7 +197,7 @@ export default function PvgGallery(props) {
             pages={pages}
             modal_pages={modal_pages}
             default_offset={offset}
-            key={Date.now()} // anti-pattern?
+            key={offset}
         />
     );
 }

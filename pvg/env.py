@@ -22,7 +22,7 @@ conf_tmp_path = fixed_path(conf.get('tmp_path', 'tmp'))
 conf_max_page_count = conf.get('max_page_count', -1) # do download after modifying this
 conf_aria2_proxy = conf.get('aria2_proxy')
 conf_aria2c_path = conf.get('aria2c_path', 'aria2c')
-conf_aria2_file_allocation = conf.get('aria2_file_allocation', '')
+conf_aria2_file_allocation = conf.get('aria2_file_allocation', 'falloc')
 conf_static_path = fixed_path(conf.get('static_path', 'static'))
 
 r = conf.get('use_thumbnails')

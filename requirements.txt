@@ -2,3 +2,4 @@ pixivpy
 Pillow
 Flask
 Flask-Cors
+requests
