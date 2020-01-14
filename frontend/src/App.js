@@ -177,7 +177,7 @@ class App extends Component {
     }
 
     update() {
-        console.log('update with', this.state.tags_curr);
+        console.log('update with', this.state.tags_curr, this.state.locating_id);
         fetch(host + 'select', {
             crossDomain: true,
             method: 'POST',

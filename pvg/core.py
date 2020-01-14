@@ -37,7 +37,9 @@ class IllustMeta(object):
         self.exists = True
         if self.size[0] < 0:
             self.size = self.pix.sizes[self.ind] = self.um.load_size()
-    
+
+order_inf = 1 << 60
+  
 class Illust(object):
     def __init__(self, data):
         # if CLEAR_FILES_META:
@@ -60,6 +62,8 @@ class Illust(object):
             'likes': self.likes,
             'tags': self.tags
         }
+        if 'order' not in data:
+            data['order'] = order_inf
         
         if self.type == 'ugoira' or self.data.get('deleted'):
             self.ums = self.umst = []
@@ -147,8 +151,6 @@ def greendam():
 
 # local db handler, functions calling which should use locks
 
-def key_of_illust(pix):
-    return -pix.id
 
 def fav_save():
     print('Saving to local db..')
@@ -157,6 +159,9 @@ def fav_save():
     with uopen('fav.json', 'w') as f:
         json.dump([pix.data for pix in fav], f, separators=(',', ':'))
     print('Saved')
+
+def key_of_illust(pix):
+    return (pix.data['order'], -pix.id)
 
 def fav_hook(force_save=False):
     # global CLEAR_FILES_META
@@ -387,6 +392,7 @@ def download():
                                 lost_pixs.append(pix)
             if lost_pixs:
                 login()
+                repls = {}
                 for pix in lost_pixs:
                     print('Fetching', pix.id)
                     r = illust_detail_handler(pix.id)
@@ -397,9 +403,14 @@ def download():
                         r = r.get('illust')
                         if r and r.is_bookmarked:
                             print('ok')
-                            fav.append(Illust(dict(r)))
+                            repls[pix.id] = Illust(dict(r))
                         else:
                             pix.delete()
+                if repls:
+                    for i in range(len(fav)):
+                        npix = repls.get(fav[i].id)
+                        if npix:
+                            fav[i] = npix
 
     except DownloadUncompletedError:
         print('Download not completed!')

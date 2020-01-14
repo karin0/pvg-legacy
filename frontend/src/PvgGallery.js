@@ -88,7 +88,7 @@ function PaginationInput(props) {
         <Box m={-0.3} ml={3}>
             <TextField
                 style={{
-                    width: 80
+                    width: 70
                 }}
                 inputProps={{
                     style: {
@@ -104,14 +104,14 @@ function PaginationInput(props) {
                         set_val(0);
                     else {
                         const x = parseInt(nv, 10);
-                        if (x >= 1 && x <= props.tot)
+                        if ((x >= 1 && x <= props.tot) || x < val)
                             set_val(x);
                         else
                             e.target.value = val;
                     }
                 }}
                 onKeyPress={ e => {
-                    if (e.key === 'Enter' && val > 0) 
+                    if (e.key === 'Enter' && val >= 1 && val <= props.tot) 
                         props.switch(val - 1);
                 }}
             />
@@ -164,9 +164,12 @@ function GalleryPagination(props) {
 }
 
 export default function PvgGallery(props) {
-    let pages = [], modal_pages = [], page = [], modal_page = [], offset = 0;
+    let pages = [], modal_pages = [], page = [], modal_page = [], offset = 0, ha = 0, hs = 0;
 
     for (const img of props.images) {
+        ha ^= img.pid + img.w;
+        hs += img.pid + img.h;
+
         if (img.ori === props.locating_id)
             offset = pages.length;
 
@@ -192,12 +195,13 @@ export default function PvgGallery(props) {
         modal_pages.push(modal_page);
     }
 
+    console.log('hash', ha, hs);
     return (
         <GalleryPagination
             pages={pages}
             modal_pages={modal_pages}
             default_offset={offset}
-            key={offset}
+            key={[ha, hs]}
         />
     );
 }
