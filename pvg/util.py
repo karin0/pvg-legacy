@@ -1,5 +1,5 @@
 import os, shutil
-from functools import partial
+from functools import partial, wraps
 
 from .error import MaxTryLimitExceedError
 
@@ -25,23 +25,35 @@ def remove_noexcept(path):
     except FileNotFoundError:
         pass
 
+def get_size(path):
+    try:
+        return os.stat(path).st_size
+    except FileNotFoundError:
+        return 0
+
 def list_copy(dest, src):
     dest.clear()
     for x in src:
         dest.append(x)
+
+def dict_copy(dest, src):
+    dest.clear()
+    for k, v in src.items():
+        dest[k] = v
 
 def retry(max_depth=3, catchee=(BaseException, )):
     def decorater(func):
         def wrapper(args, kwargs, depth):
             if depth >= max_depth:
                 raise MaxTryLimitExceedError
+            if 'depth' in kwargs:
+                kwargs['depth'] = depth
             try:
-                if 'depth' in kwargs:
-                    kwargs['depth'] = depth
                 return func(*args, **kwargs)
             except catchee as e:
                 print(f'In depth {depth}: {type(e).__name__}: {e}')
                 return wrapper(args, kwargs, depth + 1)
+        @wraps(func)
         def handler(*args, **kwargs):
             return wrapper(args, kwargs, 0)
         return handler

@@ -1,9 +1,9 @@
 const host = (process.env['NODE_ENV'] === 'development') ? 
-    'http://127.0.0.1:5000/' : (
+    'http://127.0.0.1:5678/' : (
     window.location.protocol + '//' +
     window.location.hostname +
     (window.location.port ? ':' + window.location.port + '/' : '/'));
 
-const IMAGES_PER_PAGE = 50;
+const images_per_page = 50;
 
-export { host, IMAGES_PER_PAGE };
+export { host, images_per_page };

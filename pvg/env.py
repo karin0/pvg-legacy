@@ -24,6 +24,10 @@ conf_aria2_proxy = conf.get('aria2_proxy')
 conf_aria2c_path = conf.get('aria2c_path', 'aria2c')
 conf_aria2_file_allocation = conf.get('aria2_file_allocation', 'falloc')
 conf_static_path = fixed_path(conf.get('static_path', 'static'))
+conf_waifu2x_cmd_noise_scale = conf.get('waifu2x_cmd_noise_scale',
+    ['waifu2x-converter-cpp', '-s', '--scale-ratio', '$scale_ratio', '-c', '9', '-f', 'png','-i', '$input', '-o', '$output', '-m', 'noise-scale', '--noise-level', '$noise_level'])
+conf_waifu2x_cmd_scale = conf.get('waifu2x_cmd_scale',
+    ['waifu2x-converter-cpp', '-s', '--scale-ratio', '$scale_ratio', '-c', '9', '-f', 'png','-i', '$input', '-o', '$output', '-m', 'scale'])
 
 r = conf.get('use_thumbnails')
 conf_use_thumbnails = False if r is None else (str(r).lower() == 'true')

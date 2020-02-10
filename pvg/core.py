@@ -8,7 +8,7 @@ from requests import get as req_get
 from .util import *
 from .error import *
 from .env import *
-from .locking import use_lock
+from .locking import use_lock, use_mem_lock
 
 # CLEAR_FILES_META = False
 
@@ -32,14 +32,12 @@ class IllustMeta(object):
         self.umt = pix.umst[i]
         self.size = pix.sizes[i]
         self.exists = exists
-    
+
     def downloaded(self):
         self.exists = True
         if self.size[0] < 0:
             self.size = self.pix.sizes[self.ind] = self.um.load_size()
 
-order_inf = 1 << 60
-  
 class Illust(object):
     def __init__(self, data):
         # if CLEAR_FILES_META:
@@ -62,9 +60,9 @@ class Illust(object):
             'likes': self.likes,
             'tags': self.tags
         }
-        if 'order' not in data:
-            data['order'] = order_inf
-        
+        if 'order' in data:
+            data.pop('order')
+
         if self.type == 'ugoira' or self.data.get('deleted'):
             self.ums = self.umst = []
         elif self.page_count == 1:
@@ -82,11 +80,11 @@ class Illust(object):
         if self.type == 'ugoira':
             self.sizes = []
             return False
-        
+
         if self.page_count == 1:
             self.sizes = [(self.width, self.height)]
             return False
-        
+
         self.sizes = self.data.get('sizes')
 
         if self.sizes and len(self.sizes) == self.page_count:
@@ -106,13 +104,13 @@ class Illust(object):
                 self.data['sizes'] = self.sizes = ns
                 return True
             return False
-        
+
         ns = [(self.width, self.height)]
         for i in range(1, self.page_count):
             ns.append(self.ums[i].load_size())
         self.sizes = self.data['sizes'] = ns
         return True
-    
+
     def delete(self):
         self.data['deleted'] = True
         self.ums = self.umst = self.sizes = self.data['sizes'] = []
@@ -127,13 +125,14 @@ class Illust(object):
 # remote db
 
 api = AppPixivAPI()
-login_handler = use_lock(retry_def(api.login), name='loginer')
+login_handler = use_mem_lock(retry_def(api.login), name='loginer')
 def login(force=False):
     if force or not api.user_id:
         print('Logining with', conf_username, conf_passwd)
-        login_handler(conf_username, conf_passwd)
+        r = login_handler(conf_username, conf_passwd)
         if not api.user_id:
             raise PvgError('failed to login')
+        dict_copy(user_info, dict(r.response.user))
         print('Logined, uid =', api.user_id)
 
 @use_lock
@@ -151,7 +150,6 @@ def greendam():
 
 # local db handler, functions calling which should use locks
 
-
 def fav_save():
     print('Saving to local db..')
     if os.path.exists('fav.json'):
@@ -160,13 +158,10 @@ def fav_save():
         json.dump([pix.data for pix in fav], f, separators=(',', ':'))
     print('Saved')
 
-def key_of_illust(pix):
-    return (pix.data['order'], -pix.id)
-
 def fav_hook(force_save=False):
     # global CLEAR_FILES_META
     print('Running local db hook..')
-    fav.sort(key=key_of_illust)
+    # fav.sort(key=key_of_illust)
     cnt = 1 if force_save else 0
     for pix in fav:
         if pix.gen_sizes():
@@ -183,7 +178,7 @@ def fav_load():
     print('Loading local db..')
     try:
         with uopen('fav.json', 'r') as fp:
-            list_copy(fav, list(map(Illust, json.load(fp, encoding='utf-8'))))
+            list_copy(fav, map(Illust, json.load(fp, encoding='utf-8')))
     except Exception as e:
         fav.clear()
         print('Cannot load from local fav:', type(e).__name__, e)
@@ -209,14 +204,14 @@ def build_fav():
                     if_exists = os.path.exists(conf_pix_path + '/' + fn)
                 else:
                     if_exists = pix.sizes[i][0] >= 0
-                
+
                 imeta = IllustMeta(pix, i, if_exists)
                 nav_val.append([imeta, mimes[to_ext(fn)]])
                 pix.metas.append(imeta)
 
             nav[pix.id] = nav_val
 
-# higher-level db manage
+# higher-level db opts
 
 @use_lock
 def update(quick=False):
@@ -227,13 +222,15 @@ def update(quick=False):
     login()
 
     def fetch(restrict):
-        @retry_def
+        @retry(5)
         def bookmarks_handler(**kwargs):
             depth = kwargs.pop('depth')
             res = api.user_bookmarks_illust(**kwargs)
             if 'error' in res or 'illusts' not in res:
                 print('bad request, ', res)
-                sleep(30 * (1 + depth))
+                t = 180 + 50 * depth
+                print('Retrying after', t, 'sec..')
+                sleep(t)
                 login(True)
                 raise BadRequestError
             return res
@@ -246,16 +243,17 @@ def update(quick=False):
             quick_ok = True
             for data in r.illusts:
                 if data['user']['id']:
-                    # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disable it
+                    # data['ugoira_metadata'] = api.ugoira_metadata(data['id'])['ugoira_metadata'] # disabled
                     if quick and data['id'] not in ids:
                         quick_ok = False
+
                     data = dict(data)
                     data['bookmark_restrict'] = restrict
-                    nfav.append(Illust(data)) # no need to add id to ids
+                    nfav.append(Illust(data))
                     rcnt += 1
                 else:
                     icnt += 1
-            
+
             if (quick and quick_ok) or r.next_url is None:
                 break
             r = bookmarks_handler(**api.parse_qs(r.next_url), depth=0)
@@ -297,6 +295,33 @@ def clean_aria2():
             os.remove(f'{conf_pix_path}/{fn}')
             remove_noexcept(f'{conf_pix_path}/{fn[:-6]}')
 
+def move_unused():
+    files = set()
+    for pix in fav:
+        for meta in pix.ums:
+            files.add(meta.fn)
+
+    fns = []
+    for fn in os.listdir(conf_pix_path):
+        for suf in mimes.keys():
+            if fn.endswith('.' + suf):
+                break
+        else:
+            if fn != 'unused':
+                print(fn, 'is not an image')
+            continue
+
+        if fn not in files:
+            fns.append(fn)
+            print(fn, 'is unused!')
+
+    if fns:
+        dest = conf_pix_path + '/unused'
+        if not os.path.exists(dest):
+            os.mkdir(dest)
+        for fn in fns:
+            shutil.move(conf_pix_path + '/' + fn, dest)
+
 def get_download_queue():
     print('Counting nonexistent files..')
     ls_pix = set(os.listdir(conf_pix_path))
@@ -306,6 +331,8 @@ illust_detail_handler = retry_def(api.illust_detail)
 @use_lock
 def download():
     clean_aria2()
+    move_unused()
+
     que = get_download_queue()
     if not que:
         print('All files are downloaded.')
@@ -333,7 +360,6 @@ def download():
         en = os.environ.copy()
         en['LANG']='en_US.utf-8'
         proc = subprocess.Popen(
-            # (['proxychains'] if conf_proxychains_for_aria2 else []) +
             [conf_aria2c_path, '--conf-path', aria2_conf_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -428,19 +454,31 @@ def qudg():
     greendam()
 
 def download_url(url, path, name):
-    print('downloading', url, path, name)
+    print('downloading', url)
+    '''
     try:
         login()
     except Exception as e:
         print('Exception in logging:', type(e).__name__, e)
+    '''
+    if os.path.exists(path + '/' + name):
+        print('Already exists', name)
+        return True
     try:
         return api.download(url, path=path, name=name)
     except Exception as e:
         print(type(e).__name__, e)
         return False
 
+user_info = {}
 fav = []
 nav = {}
 pix_files = {}
+
+try:
+    login()
+except:
+    print('Login failed! Press Enter to continue.')
+    input()
 
 fav_load()

@@ -1,36 +1,63 @@
-import React, { Component } from 'react';
+import React, { Component, useState } from 'react';
 
 import 'typeface-roboto';
 
-import { AppBar, CssBaseline, Toolbar, Typography, Container, IconButton,
-    TextField, Chip, Slide, Drawer, List, Divider, useScrollTrigger } from '@material-ui/core';
+import {
+    AppBar,
+    Box,
+    CssBaseline,
+    Toolbar,
+    Typography,
+    Container,
+    IconButton,
+    TextField,
+    Chip,
+    Slide,
+    Drawer,
+    Switch,
+    List,
+    ListItem,
+    ListItemIcon,
+    ListItemText,
+    ListItemSecondaryAction,
+    Link,
+    Divider,
+    Button,
+    Card,
+    CardHeader,
+    Avatar,
+    Dialog,
+    DialogActions,
+    DialogContent,
+    DialogContentText,
+    DialogTitle,
+    useScrollTrigger
+} from '@material-ui/core';
 
 import { withStyles, ThemeProvider } from '@material-ui/core/styles';
+// import { darkWhite, lightWhite } from '@material-ui/core/colors';
 
 import Autocomplete from '@material-ui/lab/Autocomplete';
+
 import MenuIcon from '@material-ui/icons/Menu';
-
-import ListboxComponent from './Listbox.js'
-import PvgGallery from './PvgGallery.js'
-import { host } from './env.js';
-import theme from './theme.js';
-
-import ListItem from '@material-ui/core/ListItem';
-import ListItemIcon from '@material-ui/core/ListItemIcon';
-import ListItemText from '@material-ui/core/ListItemText';
-
-import Button from '@material-ui/core/Button';
-import Dialog from '@material-ui/core/Dialog';
-import DialogActions from '@material-ui/core/DialogActions';
-import DialogContent from '@material-ui/core/DialogContent';
-import DialogContentText from '@material-ui/core/DialogContentText';
-import DialogTitle from '@material-ui/core/DialogTitle';
-
 import UpdateIcon from '@material-ui/icons/Update';
 import CloudDownloadIcon from '@material-ui/icons/CloudDownload';
 import EcoIcon from '@material-ui/icons/Eco';
 import DoneIcon from '@material-ui/icons/Done';
 import SyncIcon from '@material-ui/icons/Sync';
+import RefreshIcon from '@material-ui/icons/Refresh';
+import SecurityIcon from '@material-ui/icons/Security';
+import DateRangeIcon from '@material-ui/icons/DateRange';
+import SettingsIcon from '@material-ui/icons/Settings';
+import SettingsOverscanIcon from '@material-ui/icons/SettingsOverscan';
+
+import ListboxComponent from './Listbox.js'
+import { PvgGallery, TagUpdaterContext, FilterTagsContext } from './gallery.js'
+import UpscalingDialog from './UpscalingDialog.js'
+import { host } from './env.js';
+import theme from './theme.js';
+
+import img_bg from './bg.png';
 
 function compare(a, b) {
     if (a < b)
@@ -51,28 +78,25 @@ function compare_fallback(a, b, fallback) {
 function HideOnScroll(props) {
     const { children, window } = props;
     const trigger = useScrollTrigger({ target: window ? window() : undefined });
-  
+
     return (
-      <Slide appear={false} direction="down" in={!trigger}>
-        {children}
-      </Slide>
+        <Slide appear={false} direction="down" in={!trigger}>
+            {children}
+        </Slide>
     );
 }
 
 const styles = theme => ({
     list: {
         width: 270,
-    },
-    fullList: {
-        width: 'auto',
+        backgroundColor: theme.palette.background.paper,
     },
 
     menu_button: {
         marginRight: theme.spacing(2),
     },
-    card: {
-        paddingTop: theme.spacing(4),
-        paddingBottom: theme.spacing(4),
+    main: {
+        paddingBottom: theme.spacing(4)
     },
     box: {
         width: '100%',
@@ -88,23 +112,33 @@ const styles = theme => ({
         color: 'white'
     },
     input: {
-        color: 'white' 
+        color: 'white'
     },
     input_root: {
         borderColor: 'white'
+    },
+    avatar: {
+        width: theme.spacing(9),
+        height: theme.spacing(9),
+        boxShadow: "rgba(0, 0, 0, 0.2) 0px 3px 3px -2px, rgba(0, 0, 0, 0.14) 0px 3px 4px 0px, rgba(0, 0, 0, 0.12) 0px 1px 8px 0px"
+    },
+    card: {
+        // background: 'linear-gradient(90deg, rgba(53,95,146,1) 11%, rgba(41,148,234,1) 83%)',
+        backgroundImage: `url(${img_bg})`,
+        backgroundSize: 'cover',
+        borderRadius: '0px',
+    },
+    card_text: {
+        color: 'white',
+        fontSize: '110%',
     }
 });
 
 function FullUpdateItem(props) {
-    const [dialog_open, set_open] = React.useState(false);
+    const [dialog_open, set_open] = useState(false);
 
-    const open_dialog = () => {
-        set_open(true);
-    };
-
-    const close_dialog = () => {
-        set_open(false);
-    };
+    const open_dialog = () => set_open(true);
+    const close_dialog = () => set_open(false);
 
     const confirm = () => {
         window.open(host + 'action/update');
@@ -113,8 +147,12 @@ function FullUpdateItem(props) {
     }
 
     return (
-        <div>
-            <ListItem button key="update" onClick={open_dialog}>
+        <>
+            <ListItem
+                button
+                key="update"
+                onClick={open_dialog}
+            >
                 <ListItemIcon>
                     <SyncIcon />
                 </ListItemIcon>
@@ -123,44 +161,102 @@ function FullUpdateItem(props) {
             <Dialog
                 open={dialog_open}
                 onClose={close_dialog}
-                aria-labelledby="alert-dialog-title"
-                aria-describedby="alert-dialog-description"
             >
-                <DialogTitle id="alert-dialog-title">{"Warning"}</DialogTitle>
+                <DialogTitle>Warning</DialogTitle>
                 <DialogContent>
-                    <DialogContentText id="alert-dialog-description">
+                    <DialogContentText>
                         The operation may take a long time if excessive number of illusts are bookmarked. An incremental update is suggested in most cases.
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
-                <Button onClick={confirm} variant="contained" color="secondary" disableElevation>
-                    Continue
-                </Button>
-                <Button onClick={close_dialog} color="primary" autoFocus>
-                    Cancel
-                </Button>
+                    <Button
+                        onClick={confirm}
+                        variant="contained"
+                        color="secondary"
+                        disableElevation
+                    >
+                        Continue
+                    </Button>
+                    <Button
+                        onClick={close_dialog}
+                        color="primary"
+                        autoFocus>
+                        Cancel
+                    </Button>
                 </DialogActions>
             </Dialog>
-        </div>
+        </>
+    );
+}
+
+function UpscalingItem() {
+    const [dialog_open, set_open] = useState(false);
+
+    const open_dialog = () => set_open(true);
+    const close_dialog = () => set_open(false);
+
+    return (
+        <>
+            <ListItem
+                button
+                key="upscaling"
+                onClick={open_dialog}
+            >
+                <ListItemIcon>
+                    <SettingsOverscanIcon/>
+                </ListItemIcon>
+                <ListItemText primary="Upscaling" />
+            </ListItem>
+            <UpscalingDialog
+                open={dialog_open}
+                on_close={close_dialog}
+            />
+        </>
     );
 }
 
 const action_mapper = cb => x => (
-    <ListItem button key={x[2]} component="a" href={host + 'action/' + x[2]} target="_blank" onClick={cb}>
-        <ListItemIcon>
-            {x[1]}
-        </ListItemIcon>
+    <ListItem
+        button key={x[2]}
+        component="a"
+        href={host + 'action/' + x[2]}
+        target='_blank'
+        onClick={cb}
+    >
+        <ListItemIcon>{x[1]}</ListItemIcon>
         <ListItemText primary={x[0]} />
     </ListItem>
 );
-const action_listitems_1 = [
-    ['Incremental Update', <UpdateIcon />, 'qupd']
-];
-const action_listitems_2 = [
+const action_listitems = [
+    ['Incremental Update', <UpdateIcon />, 'qupd'],
     ['Download All', <CloudDownloadIcon />, 'download'],
     ['Greendam', <EcoIcon />, 'greendam'],
     ['QUDG', <DoneIcon />, 'qudg']
 ];
+
+const reg_bad = new RegExp([
+    'R-1', '誘って', 'パンツ', '輪チラ', '巨乳', 'っぱい', '事後',
+    '事前', '魅惑', '谷間', '極上の乳', '露出', '尻神', 'オナニ', '半裸',
+    'シーツ', '太もも', '裸足', '下着', 'たくしあげ', 'すじ',
+    'ぷにまん', 'ぱんつ', 'おへそ', '中出し', 'たくし上げ', '抱き枕',
+    '緊縛', '拘束'
+].join('|'));
+
+function get_tag_list(imgs) {
+    const s = new Map();
+    for (const img of imgs) {
+        for (const tag of img.tags) {
+            const c = s.get(tag);
+            s.set(tag, c ? c + 1 : 1);
+        }
+        const tag = img.author;
+        const c = s.get(tag);
+        s.set(tag, c ? c + 1 : 1);
+    }
+    return Array.from(s[Symbol.iterator]())
+        .sort((a, b) => compare_fallback(b[1], a[1], () => compare(a[0], b[0])))
+        .map(a => a[0]);
+}
 
 class App extends Component {
     constructor(props) {
@@ -168,16 +264,42 @@ class App extends Component {
         this.state = {
             error: null,
             loaded: false,
+            resp: [],
+            resp_safe: [],
+            resp_tag_list: [],
+            resp_tag_list_safe: [],
             images: [],
             tags_list: [],
             tags_curr: [],
+            tags_curr_map: null,
             locating_id: -1,
-            drawer_open: false
+            drawer_open: false,
+            card_title: 'Unknown',
+            card_title_2: null,
+            card_subtitle: '',
+            ver: 'Unknown',
+            safe: false,
+            resort: false,
+            settings_open: false
         };
     }
 
-    update() {
-        console.log('update with', this.state.tags_curr, this.state.locating_id);
+    set_images = () => this.setState(state => {
+        let imgs = state.safe ? state.resp_safe : state.resp;
+        if (this.state.resort)
+            imgs = imgs.slice(0).sort((a, b) => compare_fallback(b.pid, a.pid, () => compare(a.ind, b.ind)));
+        return {
+            images: imgs,
+            tags_list: state.safe ? state.resp_tag_list_safe : state.resp_tag_list
+        }
+    });
+
+    update = () => {
+        // console.log('update with', this.state.tags_curr, this.state.locating_id);
+        const tags = this.state.tags_curr; // reliable, for update is used as callback from setState
+        const tag_map = new Map();
+        for (let i = 0; i < tags.length; ++i)
+            tag_map.set(tags[i], i);
         fetch(host + 'select', {
             crossDomain: true,
             method: 'POST',
@@ -191,60 +313,155 @@ class App extends Component {
         .then(res => res.json())
         .then(
             res => {
-                let s = new Map();
-                for (const img of res.items)
-                    for (const tag of img.tags) {
-                        const c = s.get(tag);
-                        s.set(tag, c ? c + 1 : 1);
-                    }
-                s = Array.from(s[Symbol.iterator]());
-                s.sort((a, b) => compare_fallback(b[1], a[1], () => compare(a[0], b[0])));
-
+                const resp = res.items.map(img => {
+                    const [pid, ind, pre, w, h, title, author, aid, tags, fn] = img;
+                    const nav = `/${pid}/${ind}`;
+                    return {
+                        pid,
+                        ind,
+                        title,
+                        author,
+                        aid,
+                        tags,
+                        w,
+                        h,
+                        fn,
+                        iid: pid * 200 + ind,
+                        ori: 'img' + nav,
+                        thu: pre + nav
+                    };
+                });
+                const resp_safe = resp.filter(img => {
+                    for (const tag of img.tags)
+                        if (reg_bad.test(tag))
+                            return false;
+                    return true;
+                });
                 this.setState({
                     loaded: true,
                     error: null,
-                    images: res.items,
-                    tags_list: s.map(a => a[0])
-                });
+                    resp,
+                    resp_safe,
+                    tags_curr_map: tag_map,
+                    resp_tag_list: get_tag_list(resp),
+                    resp_tag_list_safe: get_tag_list(resp_safe)
+                }, this.set_images);
             },
             error => {
                 this.setState({
                     loaded: true,
                     error: error,
+                    resp: [],
+                    resp_safe: [],
+                    resp_tag_list: [],
+                    resp_tag_list_safe: [],
                     images: [],
-                    tags_list: []
+                    tags_list: [],
+                    tags_curr_map: tag_map
                 });
             }
         );
-    }
+    };
+
     set_tags = tags => {
-        console.log('sets', tags);
+        // console.log('sets', tags);
         this.setState({
             tags_curr: tags,
             locating_id: -1
         }, this.update);
     };
 
-    add_tag = (tag, id) => {
-        console.log('add', tag);
-        if (!this.state.tags_curr.includes(tag))
-            this.setState(state => {
+    toggle_tag = (tag, id, pos) => {
+        // console.log('add', tag);
+        this.setState(state => {
+            if (isNaN(pos))
                 return {
                     tags_curr: state.tags_curr.concat([tag]),
                     locating_id: id
                 };
-            }, this.update);
+            else {
+                const tags = state.tags_curr.slice(0);
+                tags.splice(pos, 1);
+                return {
+                    tags_curr: tags,
+                    locating_id: id
+                };
+            }
+        }, this.update);
     };
 
+    open_drawer = () => this.setState({ drawer_open: true });
+    close_drawer = () => this.setState({ drawer_open: false });
+
+    refresh = () => {
+        this.setState({
+            locating_id: -1
+        }, this.update);
+        this.close_drawer();
+    };
+
+    toggle_safe = () =>
+        this.setState(state => ({
+            locating_id: -1,
+            safe: !state.safe
+        }), this.set_images);
+
+    toggle_resort = () =>
+        this.setState(state => ({
+            locating_id: -1,
+            resort: !state.resort
+        }), this.set_images);
+
+    open_settings = () => this.setState({ settings_open: true });
+    close_settings = () => this.setState({ settings_open: false });
+
     componentDidMount() {
-        this.update();
+        Promise.all([
+            new Promise(resolve =>
+                fetch(host + 'user', {
+                    crossDomain: true,
+                    method: 'GET',
+                })
+                .then(res => res.json())
+                .then(
+                    res => {
+                        if (res.nick) {
+                            const sta = {
+                                card_title: res.nick,
+                                card_subtitle: res.mail,
+                                card_title_2: res.nick === res.name ? null : '(' + res.name + ')'
+                            };
+                            this.setState(sta, resolve);
+                        } else
+                            this.setState({
+                                card_title: res.name,
+                                card_title_2: null,
+                                card_subtitle: ''
+                            }, resolve);
+                    },
+                    error => {
+                        this.setState({
+                            card_title: 'Unknown',
+                            card_title_2: null,
+                            card_subtitle: ''
+                        }, resolve);
+                    }
+                )),
+            new Promise(resolve =>
+                fetch(host + 'ver', {
+                    crossDomain: true,
+                    method: 'GET',
+                })
+                .then(res => res.json())
+                .then(
+                    res => this.setState({ ver: res.ver }, resolve),
+                    error => this.setState({ ver: 'Unknown' }, resolve)
+                ))
+        ]).then(this.update);
     }
 
     render() {
         const { classes } = this.props;
-
-        const open_drawer = () => this.setState({drawer_open: true});
-        const close_drawer = () => this.setState({drawer_open: false});
 
         return (
             <ThemeProvider theme={theme}>
@@ -256,8 +473,7 @@ class App extends Component {
                                 edge="start"
                                 className={classes.menu_button}
                                 color="inherit"
-                                onClick={open_drawer}
-                            >
+                                onClick={this.open_drawer}>
                                 <MenuIcon />
                             </IconButton>
                             <div className={classes.box}>
@@ -266,25 +482,28 @@ class App extends Component {
                                     freeSolo
                                     options={this.state.tags_list}
                                     ListboxComponent={ListboxComponent}
-                                    renderTags={(value, getTagProps) =>
-                                        value.map((option, index) => (
-                                            <Chip
-                                                classes={{root: classes.chip}}
-                                                variant="outlined"
-                                                color="primary"
-                                                label={option}
-                                                {...getTagProps({ index })}
-                                            />
-                                        ))
+                                    renderTags={
+                                        (value, getTagProps) =>
+                                            value.map((option, index) => (
+                                                <Chip
+                                                    classes={{ root: classes.chip }}
+                                                    variant="outlined"
+                                                    color="primary"
+                                                    label={option}
+                                                    {...getTagProps({ index })}
+                                                />
+                                            ))
                                     }
-                                    renderInput={params => (
-                                        <TextField
-                                            fullWidth
-                                            color="primary"
-                                            {...params}
-                                        />
-                                    )}
-                                    onChange={ (e, value) => this.set_tags(value) }
+                                    renderInput={
+                                        params => (
+                                            <TextField
+                                                fullWidth
+                                                color="primary"
+                                                {...params}
+                                            />
+                                        )
+                                    }
+                                    onChange={(e, value) => this.set_tags(value)}
                                     renderOption={option => <Typography noWrap>{option}</Typography>}
                                     value={this.state.tags_curr}
                                     classes={{
@@ -297,34 +516,155 @@ class App extends Component {
                         </Toolbar>
                     </AppBar>
                 </HideOnScroll>
-                <Drawer open={this.state.drawer_open} onClose={close_drawer}>
+                <Drawer
+                    open={this.state.drawer_open}
+                    onClose={this.close_drawer}
+                    classes={{ paper: classes.drawer }}
+                >
+                    <Card classes={{ root: classes.card }}>
+                        <Box mt={3} ml={2} mb={-0.5}>
+                            <Avatar
+                                src={host + 'avatar'}
+                                className={classes.avatar}
+                            />
+                        </Box>
+                        <CardHeader
+                            title={
+                                this.state.card_title_2 ?
+                                    <>
+                                        <Box
+                                            fontWeight="fontWeightBold"
+                                            display="inline"
+                                        >
+                                            {this.state.card_title}
+                                        </Box>
+                                        <Box
+                                            ml={1}
+                                            display="inline"
+                                        >
+                                            {this.state.card_title_2}
+                                        </Box>
+                                    </> :
+                                    <Box fontWeight="fontWeightBold">
+                                        {this.state.card_title}
+                                    </Box>
+                            }
+                            subheader={this.state.card_subtitle}
+                            classes={{
+                                title: classes.card_text,
+                                subheader: classes.card_text
+                            }}
+                        />
+                    </Card>
                     <div
-                    className={classes.list}
-                    role="presentation"
-                    >
-                    <List>
-                        {action_listitems_1.map(action_mapper(close_drawer))}
-                        <FullUpdateItem on_confirm={close_drawer} />
-                        {action_listitems_2.map(action_mapper(close_drawer))}
-                    </List>
-                    <Divider />
+                        className={classes.list}
+                        role="presentation">
+                        <List className={classes.list}>
+                            <UpscalingItem />
+                            <ListItem
+                                button
+                                key="refresh"
+                                onClick={this.refresh}
+                            >
+                                <ListItemIcon>
+                                    <RefreshIcon />
+                                </ListItemIcon>
+                                <ListItemText primary="Refresh Results" />
+                            </ListItem>
+                        </List>
+                        <Divider />
+                        <List className={classes.list}>
+                            {action_listitems.map(action_mapper(this.close_drawer))}
+                        </List>
+                        <Divider />
+                        <List className={classes.list}>
+                            <ListItem>
+                                <ListItemIcon>
+                                    <SecurityIcon />
+                                </ListItemIcon> <ListItemText primary="Safe Mode" />
+                                <ListItemSecondaryAction>
+                                    <Switch
+                                        edge="end"
+                                        onChange={this.toggle_safe}
+                                        checked={this.state.safe}
+                                    />
+                                </ListItemSecondaryAction>
+                            </ListItem>
+                        </List>
+                        <ListItem
+                            button
+                            key="options"
+                            onClick={this.open_settings}
+                        >
+                        <ListItemIcon>
+                            <SettingsIcon />
+                        </ListItemIcon>
+                        <ListItemText primary="Options" />
+                        </ListItem>
+                            <Dialog
+                                open={this.state.settings_open}
+                                onClose={this.close_settings}
+                                maxWidth="sm"
+                                fullWidth={true}
+                            >
+                                <DialogTitle>Options</DialogTitle>
+                                <DialogContent>
+                                    <List style={{ width: "100%" }}>
+                                        <ListItem>
+                                            <ListItemIcon>
+                                                <DateRangeIcon />
+                                            </ListItemIcon>
+                                            <ListItemText primary="Sort by Dates" />
+                                            <ListItemSecondaryAction>
+                                                <Switch
+                                                    edge="end"
+                                                    onChange={this.toggle_resort}
+                                                    checked={this.state.resort}
+                                                />
+                                            </ListItemSecondaryAction>
+                                        </ListItem>
+                                        <FullUpdateItem
+                                            on_confirm={this.close_drawer}
+                                        />
+                                    </List>
+                                </DialogContent>
+                            </Dialog>
+                        <Divider />
+                        <List>
+                            <ListItem key="info">
+                                <ListItemText primary={
+                                    <>
+                                        <Link
+                                            href="https://github.com/karin0/pvg"
+                                            target="_blank"
+                                            rel="noreferrer">
+                                            pvg-ng
+                                        </Link>
+                                        <br />
+                                        {this.state.ver}
+                                    </>
+                                }
+                                />
+                            </ListItem>
+                        </List>
                     </div>
                 </Drawer>
-                <Container className={classes.card} maxWidth="lg">
+                <Container
+                    className={classes.main}
+                    maxWidth="lg"
+                >
                     {this.state.loaded ?
                         (this.state.error ?
-                            <div>
-                                Error
-                            </div> :
-                            <PvgGallery
-                                images={this.state.images}
-                                locating_id={this.state.locating_id}
-                                update_tags={this.add_tag}
-                            />
-                        ) :
-                        <div>
-                            Loading..
-                        </div>
+                            "Error" :
+                                <TagUpdaterContext.Provider value={this.toggle_tag}>
+                                    <FilterTagsContext.Provider value={this.state.tags_curr_map}>
+                                        <PvgGallery
+                                            images={this.state.images}
+                                            locating_id={this.state.locating_id}
+                                        />
+                                    </FilterTagsContext.Provider>
+                                </TagUpdaterContext.Provider>
+                        ) : "Loading.."
                     }
                 </Container>
             </ThemeProvider>
