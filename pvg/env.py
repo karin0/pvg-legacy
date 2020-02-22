@@ -24,10 +24,16 @@ conf_aria2_proxy = conf.get('aria2_proxy')
 conf_aria2c_path = conf.get('aria2c_path', 'aria2c')
 conf_aria2_file_allocation = conf.get('aria2_file_allocation', 'falloc')
 conf_static_path = fixed_path(conf.get('static_path', 'static'))
-conf_waifu2x_cmd_noise_scale = conf.get('waifu2x_cmd_noise_scale',
-    ['waifu2x-converter-cpp', '-s', '--scale-ratio', '$scale_ratio', '-c', '9', '-f', 'png','-i', '$input', '-o', '$output', '-m', 'noise-scale', '--noise-level', '$noise_level'])
-conf_waifu2x_cmd_scale = conf.get('waifu2x_cmd_scale',
-    ['waifu2x-converter-cpp', '-s', '--scale-ratio', '$scale_ratio', '-c', '9', '-f', 'png','-i', '$input', '-o', '$output', '-m', 'scale'])
+
+conf_waifu2x_path = conf.get('waifu2x_path', 'waifu2x-converter-cpp')
+conf_waifu2x_args_noise_scale = conf.get('waifu2x_args_noise_scale',
+    ['-s', '--scale-ratio', '$scale_ratio', '-c', '9', '-f', 'png','-i', '$input', '-o', '$output', '-m', 'noise-scale', '--noise-level', '$noise_level'])
+conf_waifu2x_args_scale = conf.get('waifu2x_args_scale',
+    ['-s', '--scale-ratio', '$scale_ratio', '-c', '9', '-f', 'png','-i', '$input', '-o', '$output', '-m', 'scale'])
+
+waifu2x_cwd = os.path.dirname(conf_waifu2x_path) or None
+waifu2x_cmd_noise_scale = [conf_waifu2x_path] + conf_waifu2x_args_noise_scale
+waifu2x_cmd_scale = [conf_waifu2x_path] + conf_waifu2x_args_scale
 
 r = conf.get('use_thumbnails')
 conf_use_thumbnails = False if r is None else (str(r).lower() == 'true')

@@ -9,7 +9,7 @@ from .util import *
 from .core import fav, nav, user_info, update, greendam, download, download_url, qudg
 from .workfilters import wf_hat, wfs
 from .locking import locked, Lock
-from .env import conf_username, conf_static_path, conf_pix_path, conf_thumb_path, conf_tmp_path, conf_use_thumbnails, conf_waifu2x_cmd_noise_scale, conf_waifu2x_cmd_scale
+from .env import conf_username, conf_static_path, conf_pix_path, conf_thumb_path, conf_tmp_path, conf_use_thumbnails, waifu2x_cmd_noise_scale, waifu2x_cmd_scale, waifu2x_cwd
 
 def fix(s):
     return fixed_path(os.path.abspath(s))
@@ -205,14 +205,14 @@ def upscale():
         if not os.path.exists(output_path):
             dic = {
                 '$scale_ratio': ratio,
-                '$input': input_path,
-                '$output': output_path,
+                '$input': os.path.abspath(input_path),
+                '$output': os.path.abspath(output_path),
             }
             if noise_level:
                 dic['$noise_level'] = str(noise_level - 1)
-                cmd = conf_waifu2x_cmd_noise_scale
+                cmd = waifu2x_cmd_noise_scale
             else:
-                cmd = conf_waifu2x_cmd_scale
+                cmd = waifu2x_cmd_scale
 
             def mapper(s):
                 v = dic.get(s)
@@ -220,7 +220,7 @@ def upscale():
 
             cmd = list(map(mapper, cmd))
             print(' '.join(cmd))
-            if subprocess.run(cmd).returncode:
+            if subprocess.run(cmd, cwd=waifu2x_cwd).returncode:
                 abort(500)
 
         return send_from_directory(tmp_path, output_fn, as_attachment=True, attachment_filename=output_fn)
