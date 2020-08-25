@@ -62,7 +62,6 @@ function CaptionLink(props) {
     );
 }
 
-
 const useStylesIC = makeStyles(theme => ({
     chip: {
         marginRight: '0.5em',
@@ -252,7 +251,7 @@ function GalleryPagination(props) {
 
     return (
         <>
-            <Box m={3}>
+            <Box my={3} width="100%">
                 <GalleryView
                     images={images}
                     views={views}

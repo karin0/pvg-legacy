@@ -3,3 +3,4 @@ Pillow
 Flask
 Flask-Cors
 requests
+waitress

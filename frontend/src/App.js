@@ -96,6 +96,8 @@ const styles = theme => ({
         marginRight: theme.spacing(2),
     },
     main: {
+        paddingLeft: 0,
+        paddingRight: 0,
         paddingBottom: theme.spacing(4)
     },
     box: {
